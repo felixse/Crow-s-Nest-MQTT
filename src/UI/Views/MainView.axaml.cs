@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Input.Platform; // Added for ClipboardExtensions (SetTextAsync)
 using Avalonia.Interactivity; // Added for RoutedEventArgs
 using Avalonia.Threading; // Added for Dispatcher
+using Avalonia.VisualTree; // Added for visual tree traversal
 using CrowsNestMqtt.UI.ViewModels; // Namespace for MainViewModel
 
 using ReactiveUI;
@@ -12,6 +13,7 @@ using System.Collections.Specialized; // Added for INotifyCollectionChanged
 using System.Reactive.Linq; // Added for INotifyPropertyChanged (optional but good practice)
 using System.Reactive; // Added for Unit
 using AvaloniaEdit.Editing; // Added for Selection
+using FluentAvalonia.UI.Controls; // Added for ContentDialog
 using System.Diagnostics.CodeAnalysis;
 
 // Dynamically load System.Windows.Forms for clipboard access on Windows
@@ -34,8 +36,9 @@ public partial class MainView : UserControl
    private IDisposable? _keyDownSubscription; // Added for keyboard navigation shortcuts
    private IDisposable? _commandInputGotFocusSubscription; // Added for command input focus tracking
    private IDisposable? _commandInputLostFocusSubscription; // Added for command input focus tracking
+   private IDisposable? _settingsInteractionSubscription; // Added for settings dialog interaction
+   private IDisposable? _connectionDialogSubscription; // Added for connection dialog interaction
    private Window? _parentWindow; // Added reference to the parent window
-   private readonly AvaloniaEdit.TextEditor? _rawPayloadEditor; // Reference to the editor (now readonly)
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MainView"/> class.
@@ -60,14 +63,6 @@ public partial class MainView : UserControl
         //     }
         // });
 
-        // Find the editor control after initialization happens in InitializeComponent()
-        _rawPayloadEditor = this.FindControl<AvaloniaEdit.TextEditor>("RawPayloadEditor");
-        if (_rawPayloadEditor == null)
-        {
-             CrowsNestMqtt.Utils.AppLogger.Error("Could not find RawPayloadEditor control in MainView constructor.");
-             // Consider throwing an exception or handling this more robustly if the editor is critical
-        }
-
         // Subscribe to DataContext changes to hook/unhook event handlers
         this.DataContextChanged += OnDataContextChanged;
     }
@@ -88,8 +83,35 @@ public partial class MainView : UserControl
             // Delay initial focus slightly to ensure the control is fully ready
             Dispatcher.UIThread.Post(() => CommandAutoCompleteBox?.Focus(), DispatcherPriority.Loaded);
 
+            // Show connection dialog on launch (if enabled in settings)
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try
+                {
+                    if (!viewModel.Settings.ShowConnectionDialogOnLaunch)
+                        return;
+
+                    var shouldConnect = await viewModel.ShowConnectionDialogInteraction.Handle(Unit.Default);
+                    if (shouldConnect)
+                    {
+                        await viewModel.ExecuteConnectAsync();
+                    }
+                }
+                catch (UnhandledInteractionException<Unit, bool>)
+                {
+                    // No handler registered yet, ignore
+                }
+            }, DispatcherPriority.Loaded);
+
             // Get the top-level control (usually the Window) - more reliable here
             _parentWindow = TopLevel.GetTopLevel(this) as Window;
+
+            // Enable window dragging from the custom title bar
+            if (_parentWindow != null && TitleBarGrid != null)
+            {
+                TitleBarGrid.PointerPressed += OnTitleBarPointerPressed;
+            }
+
             if (_parentWindow != null)
             {
                 // Set initial focus state
@@ -108,7 +130,7 @@ public partial class MainView : UserControl
 #pragma warning restore IL2026
 
 #pragma warning disable IL2026 // Suppress trim warning for FromEventPattern
-                _lostFocusSubscription = Observable.FromEventPattern<RoutedEventArgs>(_parentWindow, nameof(Window.LostFocus))
+                _lostFocusSubscription = Observable.FromEventPattern<FocusChangedEventArgs>(_parentWindow, nameof(Window.LostFocus))
                     .ObserveOn(RxSchedulers.MainThreadScheduler)
                     .Subscribe(_ =>
                     {
@@ -166,10 +188,24 @@ public partial class MainView : UserControl
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
+
+        if (TitleBarGrid != null)
+        {
+            TitleBarGrid.PointerPressed -= OnTitleBarPointerPressed;
+        }
+
         // Focus subscriptions are cleaned up in UnsubscribeFromViewModel which is called below
         UnsubscribeFromViewModel(); // Call combined unsubscribe method
         this.DataContextChanged -= OnDataContextChanged; // Unsubscribe from DataContext changes
         base.OnDetachedFromVisualTree(e); // Call base method last
+    }
+
+    private void OnTitleBarPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && _parentWindow != null)
+        {
+            _parentWindow.BeginMoveDrag(e);
+        }
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
@@ -263,6 +299,29 @@ public partial class MainView : UserControl
                 }
             });
 
+            // Subscribe to the ShowSettingsInteraction to show the settings dialog
+            _settingsInteractionSubscription = vm.ShowSettingsInteraction.RegisterHandler(interaction =>
+            {
+                // Settings overlay is handled declaratively via IsSettingsVisible binding
+                interaction.SetOutput(Unit.Default);
+            });
+
+            // Subscribe to the ShowConnectionDialogInteraction to show the connection dialog
+            _connectionDialogSubscription = vm.ShowConnectionDialogInteraction.RegisterHandler(async interaction =>
+            {
+                var dialog = new FAContentDialog
+                {
+                    Title = "Connection Settings",
+                    PrimaryButtonText = "Connect",
+                    CloseButtonText = "Cancel",
+                    DefaultButton = FAContentDialogButton.Primary,
+                    Content = new ConnectionDialog { DataContext = vm.Settings }
+                };
+
+                var result = await dialog.ShowAsync();
+                interaction.SetOutput(result == FAContentDialogResult.Primary);
+            });
+
             // Subscribe to the CopyImageToClipboardInteraction
             vm.CopyImageToClipboardInteraction.RegisterHandler(async interaction =>
             {
@@ -315,11 +374,16 @@ public partial class MainView : UserControl
                .ObserveOn(RxSchedulers.MainThreadScheduler) // Ensure UI access is on the correct thread
                .Subscribe(doc =>
                {
+                   // Find the editor from the visual tree (it lives inside a DataTemplate and may be recreated)
+                   var editor = this.GetVisualDescendants()
+                       .OfType<AvaloniaEdit.TextEditor>()
+                       .FirstOrDefault(e => e.Name == "RawPayloadEditor");
+
                    // Check if the editor and its TextArea are available
-                   if (_rawPayloadEditor?.TextArea != null && (doc == null || doc.TextLength == 0))
+                   if (editor?.TextArea != null && (doc == null || doc.TextLength == 0))
                    {
                        // Clear selection by creating an empty selection at the start
-                       _rawPayloadEditor.TextArea.Selection = Selection.Create(_rawPayloadEditor.TextArea, 0, 0);
+                       editor.TextArea.Selection = Selection.Create(editor.TextArea, 0, 0);
                        CrowsNestMqtt.Utils.AppLogger.Debug("RawPayloadDocument changed and is empty. Cleared editor selection.");
                    }
                });
@@ -421,6 +485,8 @@ _commandInputLostFocusSubscription?.Dispose(); // Dispose command input focus tr
 _commandInputLostFocusSubscription = null;
 _clipboardInteractionSubscription?.Dispose(); // Dispose clipboard interaction subscription
 _clipboardInteractionSubscription = null;
+_connectionDialogSubscription?.Dispose(); // Dispose connection dialog subscription
+_connectionDialogSubscription = null;
 _rawPayloadDocumentSubscription?.Dispose(); // Dispose document subscription
 _rawPayloadDocumentSubscription = null;
 _parentWindow = null; // Clear window reference
@@ -438,7 +504,6 @@ _parentWindow = null; // Clear window reference
             _publishWindow.Close();
             _publishWindow = null;
         }
-// _rawPayloadEditor reference is cleared implicitly when view is destroyed
 // Optional: Unsubscribe from PropertyChanged if you subscribed
 // if (DataContext is MainViewModel oldVm)
 // {

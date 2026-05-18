@@ -1,0 +1,97 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:ui="using:FluentAvalonia.UI.Controls"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:CrowsNestMqtt.UI.ViewModels"
+             mc:Ignorable="d"
+             x:Class="CrowsNestMqtt.UI.Views.SettingsPanel"
+             x:DataType="vm:MainViewModel"
+             x:CompileBindings="False">
+    <StackPanel Spacing="4" Margin="8">
+
+        <!-- Export Format -->
+        <ui:FASettingsExpander Header="Export Format"
+                              Description="Format used when exporting messages">
+            <ui:FASettingsExpander.Footer>
+                <ComboBox ItemsSource="{Binding Settings.AvailableExportTypes}"
+                          SelectedItem="{Binding Settings.ExportFormat, Mode=TwoWay}"
+                          MinWidth="220" />
+            </ui:FASettingsExpander.Footer>
+        </ui:FASettingsExpander>
+
+        <!-- Export Path -->
+        <ui:FASettingsExpander Header="Export Path"
+                              Description="File path for exported messages">
+            <ui:FASettingsExpander.Footer>
+                <TextBox Text="{Binding Settings.ExportPath, Mode=TwoWay}"
+                         MinWidth="300" />
+            </ui:FASettingsExpander.Footer>
+        </ui:FASettingsExpander>
+
+        <!-- Subscription QoS -->
+        <ui:FASettingsExpander Header="Subscription QoS"
+                              Description="Higher QoS preserves message delivery guarantees but reduces throughput">
+            <ui:FASettingsExpander.Footer>
+                <ComboBox SelectedIndex="{Binding Settings.SubscriptionQoS, Mode=TwoWay}" MinWidth="220">
+                    <ComboBoxItem Content="0 - At Most Once"/>
+                    <ComboBoxItem Content="1 - At Least Once (Default)"/>
+                    <ComboBoxItem Content="2 - Exactly Once"/>
+                </ComboBox>
+            </ui:FASettingsExpander.Footer>
+        </ui:FASettingsExpander>
+
+        <!-- Show Connection Dialog on Launch -->
+        <ui:FASettingsExpander Header="Show Connection Dialog on Launch"
+                              Description="Show the connection dialog when the application starts">
+            <ui:FASettingsExpander.Footer>
+                <ToggleSwitch IsChecked="{Binding Settings.ShowConnectionDialogOnLaunch, Mode=TwoWay}" />
+            </ui:FASettingsExpander.Footer>
+        </ui:FASettingsExpander>
+
+        <!-- Application Theme -->
+        <ui:FASettingsExpander Header="Application Theme"
+                              Description="Choose the application color theme">
+            <ui:FASettingsExpander.Footer>
+                <ComboBox ItemsSource="{Binding Settings.AvailableThemes}"
+                          SelectedItem="{Binding Settings.Theme, Mode=TwoWay}"
+                          MinWidth="220" />
+            </ui:FASettingsExpander.Footer>
+        </ui:FASettingsExpander>
+
+        <!-- Topic Buffer Limits -->
+        <ui:FASettingsExpander Header="Topic Buffer Limits"
+                              Description="Configure per-topic memory limits"
+                              IsExpanded="True">
+            <ui:FASettingsExpander.Footer>
+                <Button Content="Add New Limit"
+                        Command="{Binding Settings.AddTopicLimitCommand}" />
+            </ui:FASettingsExpander.Footer>
+            <ui:FASettingsExpander.Items>
+                <ItemsControl ItemsSource="{Binding Settings.TopicSpecificLimits}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:TopicBufferLimitViewModel}">
+                            <Grid ColumnDefinitions="*,Auto,Auto" Margin="4" ColumnSpacing="4">
+                                <TextBox Grid.Column="0" Text="{Binding TopicFilter, Mode=TwoWay}"
+                                         PlaceholderText="Topic Filter (e.g., # or /some/topic)"
+                                         MinWidth="160"/>
+                                <NumericUpDown Grid.Column="1" Value="{Binding MaxSizeBytes, Mode=TwoWay, StringFormat=N0}"
+                                               ParsingNumberStyle="Integer" Minimum="0"
+                                               PlaceholderText="Bytes" MinWidth="100"/>
+                                <Button Grid.Column="2"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Command="{Binding $parent[ItemsControl].DataContext.Settings.RemoveTopicLimitCommand}"
+                                        CommandParameter="{Binding}"
+                                        IsEnabled="{Binding CanBeRemoved}">
+                                        <ui:FASymbolIcon Symbol="Delete" />
+                                </Button>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ui:FASettingsExpander.Items>
+        </ui:FASettingsExpander>
+
+    </StackPanel>
+</UserControl>

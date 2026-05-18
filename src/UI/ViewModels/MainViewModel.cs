@@ -720,6 +720,10 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
     public Interaction<string, Unit> CopyTextToClipboardInteraction { get; }
     // Interaction for requesting image copy from the View
     public Interaction<Bitmap, Unit> CopyImageToClipboardInteraction { get; }
+    // Interaction for showing the settings dialog from the View
+    public Interaction<Unit, Unit> ShowSettingsInteraction { get; }
+    // Interaction for showing the connection dialog from the View (returns true if user wants to connect)
+    public Interaction<Unit, bool> ShowConnectionDialogInteraction { get; }
 
     /// <summary>
     /// Event raised when the publish window should be shown or focused.
@@ -774,6 +778,8 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
         JsonViewer = new JsonViewerViewModel(); // Instantiate JSON viewer VM
         CopyTextToClipboardInteraction = new Interaction<string, Unit>(); // Initialize the interaction
         CopyImageToClipboardInteraction = new Interaction<Bitmap, Unit>(); // Initialize the image interaction
+        ShowSettingsInteraction = new Interaction<Unit, Unit>(); // Initialize the settings dialog interaction
+        ShowConnectionDialogInteraction = new Interaction<Unit, bool>(); // Initialize the connection dialog interaction
 
         // Initialize the RawPayloadDocument on the Avalonia UI thread (TextDocument has thread affinity)
         // In test mode, create directly to avoid touching Dispatcher
@@ -2448,11 +2454,36 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
     private async Task ConnectAsync()
     {
         Log.Information("Connect command executed.");
-        
+
+        // Show connection dialog and wait for user confirmation
+        try
+        {
+            var shouldConnect = await ShowConnectionDialogInteraction.Handle(Unit.Default);
+            if (!shouldConnect)
+            {
+                Log.Information("Connection cancelled by user.");
+                return;
+            }
+        }
+        catch (UnhandledInteractionException<Unit, bool>)
+        {
+            // No handler registered (e.g. in tests), proceed without dialog
+            Log.Debug("No connection dialog handler registered, proceeding directly.");
+        }
+
+        await ExecuteConnectAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Executes the actual MQTT connection without showing the connection dialog.
+    /// Used by ConnectAsync (after dialog confirmation) and by startup auto-connect.
+    /// </summary>
+    internal async Task ExecuteConnectAsync()
+    {
         // Clear any previous error message before starting new connection
         ConnectionStatusMessage = null;
         this.RaisePropertyChanged(nameof(HasConnectionError));
-        
+
         // Rebuild connection settings from ViewModel just before connecting
         var connectionSettings = new MqttConnectionSettings
         {
@@ -2468,7 +2499,7 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
             UseTls = Settings.UseTls,
             SubscriptionQoS = Settings.SubscriptionQoS
         };
-        
+
         _mqttService.UpdateSettings(connectionSettings);
 
         // Also update the UI-side message store limits to match
@@ -2489,7 +2520,7 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
         {
             Log.Warning(ex, "Failed to update TopicMessageStore limits.");
         }
-        
+
         // The MqttEngine now manages its own cancellation token.
         // We just need to call the method.
         await _mqttService.ConnectAsync().ConfigureAwait(false);
@@ -2699,7 +2730,7 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
 
     private void OpenSettings()
     {
-        IsSettingsVisible = !IsSettingsVisible; // Toggle the visibility
+        IsSettingsVisible = !IsSettingsVisible;
         Log.Information("Settings Visible: {IsSettingsVisible}", IsSettingsVisible);
     }
 

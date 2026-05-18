@@ -9,7 +9,8 @@ using CrowsNestMqtt.BusinessLogic.Contracts; // Added for IMessageCorrelationSer
 using CrowsNestMqtt.BusinessLogic.Configuration; // Added for EnvironmentSettingsOverrides
 using CrowsNestMqtt.UI.Services; // Added for ResponseIconService
 using CrowsNestMqtt.UI.Contracts; // Added for IResponseIconService
-using Microsoft.Extensions.Logging;
+using ReactiveUI; // Added for WhenAnyValue
+using System.Reactive.Linq; // Added for Subscribe
 using System.Timers; // Added for Timer
 using System.Runtime; // Added for GCSettings
 using System.Runtime.CompilerServices;
@@ -95,6 +96,12 @@ class Program
     {
         return AppBuilder.Configure<CrowsNestMqtt.UI.App>() // Configure the App from UI project
             .UsePlatformDetect()
+            .With(new Win32PlatformOptions
+            {
+                // WinUIComposition is required for Mica/transparency backdrop support
+                CompositionMode = [Win32CompositionMode.WinUIComposition],
+                RenderingMode = [Win32RenderingMode.AngleEgl, Win32RenderingMode.Software]
+            })
             .LogToTrace() // Added for better diagnostics if needed
             .UseReactiveUI(_ => { })
             .AfterSetup(builder => // Add desktop-specific setup here
@@ -121,6 +128,15 @@ class Program
                     {
                         DataContext = new MainViewModel(commandParserService, null, deleteTopicService, correlationService, iconService, environmentOverrides, publishHistoryService: publishHistoryService, fileAutoCompleteService: fileAutoCompleteService)
                     };
+
+                    // Apply initial theme and subscribe to theme changes
+                    if (desktop.MainWindow.DataContext is MainViewModel mainVm)
+                    {
+                        var app = (CrowsNestMqtt.UI.App)builder.Instance!;
+                        app.ApplyTheme(mainVm.Settings.Theme);
+                        mainVm.Settings.WhenAnyValue(s => s.Theme)
+                            .Subscribe(theme => app.ApplyTheme(theme));
+                    }
 
                     if (environmentOverrides?.IsAspireEnvironment == true)
                     {

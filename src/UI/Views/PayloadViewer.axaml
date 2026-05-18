@@ -39,7 +39,7 @@
         </Border>
 
         <!-- Raw Text Viewer -->
-        <Border Classes="Card" IsVisible="{Binding IsRawViewerVisible}">
+        <Border Classes="Card" IsVisible="{Binding IsRawTextViewerVisible}">
             <ae:TextEditor Name="RawPayloadEditor"
                            FontFamily="Consolas,Menlo,Monospace"
                            FontSize="12"

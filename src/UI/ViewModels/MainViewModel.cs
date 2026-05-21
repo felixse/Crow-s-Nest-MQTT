@@ -1048,7 +1048,9 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
             DefaultTopicBufferSizeBytes = Settings.Into().DefaultTopicBufferSizeBytes,
             AuthMode = Settings.Into().AuthMode,
             UseTls = Settings.UseTls,
-            SubscriptionQoS = Settings.SubscriptionQoS
+            SubscriptionQoS = Settings.SubscriptionQoS,
+            Transport = Settings.SelectedTransport,
+            WebSocketPath = Settings.WebSocketPath
         });
 
         _mqttService.ConnectionStateChanged += OnConnectionStateChanged;
@@ -2466,7 +2468,9 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
             DefaultTopicBufferSizeBytes = Settings.Into().DefaultTopicBufferSizeBytes,
             AuthMode = Settings.Into().AuthMode,
             UseTls = Settings.UseTls,
-            SubscriptionQoS = Settings.SubscriptionQoS
+            SubscriptionQoS = Settings.SubscriptionQoS,
+            Transport = Settings.SelectedTransport,
+            WebSocketPath = Settings.WebSocketPath
         };
         
         _mqttService.UpdateSettings(connectionSettings);
@@ -3265,13 +3269,48 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
         }
         else if (command.Arguments.Count == 1)
         {
-            // :connect server:port
+            // :connect server:port or :connect ws://server:port/path or :connect wss://server:port/path
+            var arg = command.Arguments[0];
+
+            // Check for WebSocket URI scheme
+            if (arg.StartsWith("ws://", StringComparison.OrdinalIgnoreCase) ||
+                arg.StartsWith("wss://", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var uri = new Uri(arg);
+                    var scheme = uri.Scheme.ToLowerInvariant();
+                    Settings.Hostname = uri.Host;
+                    Settings.Port = uri.Port > 0 ? uri.Port : (scheme == "wss" ? 443 : 80);
+                    Settings.SelectedTransport = BusinessLogic.Configuration.TransportProtocol.WebSocket;
+                    Settings.UseTls = scheme == "wss";
+                    Settings.WebSocketPath = uri.AbsolutePath == "/" ? null : uri.AbsolutePath;
+                }
+                catch (UriFormatException)
+                {
+                    StatusBarText = $"Error: Invalid WebSocket URI '{arg}'. Expected: ws://host:port/path or wss://host:port/path";
+                    Log.Warning("Invalid WebSocket URI for :connect argument: {Argument}", arg);
+                    return;
+                }
+
+                StatusBarText = $"Attempting WebSocket connection to {Settings.Hostname}:{Settings.Port}...";
+                ConnectCommand.Execute().Subscribe(
+                    _ => StatusBarText = $"Successfully initiated WebSocket connection to {Settings.Hostname}:{Settings.Port}.",
+                    ex =>
+                    {
+                        StatusBarText = $"Error initiating connection: {ex.Message}";
+                        Log.Error(ex, "Error executing ConnectCommand");
+                    });
+                return;
+            }
+
+            // :connect server:port (TCP)
             // Parse server:port from first argument (already validated by parser)
-            var parts = command.Arguments[0].Split(':');
+            var parts = arg.Split(':');
             if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || !int.TryParse(parts[1], out int port) || port < 1 || port > 65535)
             {
-                StatusBarText = $"Error: Invalid format for :connect argument '{command.Arguments[0]}'. Expected: <server_address:port>";
-                Log.Warning("Invalid format for :connect argument: {Argument}", command.Arguments[0]);
+                StatusBarText = $"Error: Invalid format for :connect argument '{arg}'. Expected: <server_address:port> or ws://host:port/path";
+                Log.Warning("Invalid format for :connect argument: {Argument}", arg);
                 return;
             }
             string host = parts[0];

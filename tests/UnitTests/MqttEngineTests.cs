@@ -314,4 +314,98 @@ public class MqttEngineTests
         Assert.True(sizeAfterExpand > 8_000, $"Buffer should have grown beyond previous 8K limit after expansion, was {sizeAfterExpand}");
         Assert.True(sizeAfterExpand <= 20_000, $"Buffer should not exceed new 20K limit, was {sizeAfterExpand}");
     }
+
+    [Fact]
+    public void BuildMqttOptions_WithWebSocketTransport_ShouldUseWebSocketChannel()
+    {
+        // Arrange
+        var settings = new MqttConnectionSettings
+        {
+            Hostname = "broker.example.com",
+            Port = 8083,
+            Transport = TransportProtocol.WebSocket,
+            WebSocketPath = "/mqtt"
+        };
+        using var engine = new MqttEngine(settings);
+
+        // Act
+        var methodInfo = typeof(MqttEngine).GetMethod("BuildMqttOptions", BindingFlags.NonPublic | BindingFlags.Instance);
+        var options = methodInfo?.Invoke(engine, null) as MqttClientOptions;
+
+        // Assert
+        Assert.NotNull(options);
+        Assert.IsType<MqttClientWebSocketOptions>(options.ChannelOptions);
+        var wsOptions = (MqttClientWebSocketOptions)options.ChannelOptions;
+        Assert.Equal("ws://broker.example.com:8083/mqtt", wsOptions.Uri);
+    }
+
+    [Fact]
+    public void BuildMqttOptions_WithWebSocketAndTls_ShouldUseWssScheme()
+    {
+        // Arrange
+        var settings = new MqttConnectionSettings
+        {
+            Hostname = "secure.broker.io",
+            Port = 8084,
+            Transport = TransportProtocol.WebSocket,
+            UseTls = true,
+            WebSocketPath = "/mqtt"
+        };
+        using var engine = new MqttEngine(settings);
+
+        // Act
+        var methodInfo = typeof(MqttEngine).GetMethod("BuildMqttOptions", BindingFlags.NonPublic | BindingFlags.Instance);
+        var options = methodInfo?.Invoke(engine, null) as MqttClientOptions;
+
+        // Assert
+        Assert.NotNull(options);
+        Assert.IsType<MqttClientWebSocketOptions>(options.ChannelOptions);
+        var wsOptions = (MqttClientWebSocketOptions)options.ChannelOptions;
+        Assert.Equal("wss://secure.broker.io:8084/mqtt", wsOptions.Uri);
+    }
+
+    [Fact]
+    public void BuildMqttOptions_WithWebSocketAndNoPath_ShouldDefaultToMqttPath()
+    {
+        // Arrange
+        var settings = new MqttConnectionSettings
+        {
+            Hostname = "broker.local",
+            Port = 8083,
+            Transport = TransportProtocol.WebSocket,
+            WebSocketPath = null
+        };
+        using var engine = new MqttEngine(settings);
+
+        // Act
+        var methodInfo = typeof(MqttEngine).GetMethod("BuildMqttOptions", BindingFlags.NonPublic | BindingFlags.Instance);
+        var options = methodInfo?.Invoke(engine, null) as MqttClientOptions;
+
+        // Assert
+        Assert.NotNull(options);
+        Assert.IsType<MqttClientWebSocketOptions>(options.ChannelOptions);
+        var wsOptions = (MqttClientWebSocketOptions)options.ChannelOptions;
+        Assert.Equal("ws://broker.local:8083/mqtt", wsOptions.Uri);
+    }
+
+    [Fact]
+    public void BuildMqttOptions_WithTcpTransport_ShouldUseTcpChannel()
+    {
+        // Arrange
+        var settings = new MqttConnectionSettings
+        {
+            Hostname = "broker.local",
+            Port = 1883,
+            Transport = TransportProtocol.Tcp
+        };
+        using var engine = new MqttEngine(settings);
+
+        // Act
+        var methodInfo = typeof(MqttEngine).GetMethod("BuildMqttOptions", BindingFlags.NonPublic | BindingFlags.Instance);
+        var options = methodInfo?.Invoke(engine, null) as MqttClientOptions;
+
+        // Assert
+        Assert.NotNull(options);
+        Assert.IsType<MqttClientTcpOptions>(options.ChannelOptions);
+    }
 }

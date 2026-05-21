@@ -179,12 +179,24 @@ private MqttClientOptions? _currentOptions;
     private MqttClientOptions BuildMqttOptions()
     {
         var builder = new MqttClientOptionsBuilder()
-            .WithTcpServer(_settings.Hostname, _settings.Port)
             .WithProtocolVersion(MQTTnet.Formatter.MqttProtocolVersion.V500)
             .WithKeepAlivePeriod(_settings.KeepAliveInterval)
             .WithCleanSession(_settings.CleanSession)
             .WithWillQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
             .WithTimeout(TimeSpan.FromSeconds(10));
+
+        // Configure transport
+        if (_settings.Transport == TransportProtocol.WebSocket)
+        {
+            var scheme = _settings.UseTls ? "wss" : "ws";
+            var path = string.IsNullOrWhiteSpace(_settings.WebSocketPath) ? "/mqtt" : _settings.WebSocketPath;
+            var uri = $"{scheme}://{_settings.Hostname}:{_settings.Port}{path}";
+            builder.WithWebSocketServer(o => o.WithUri(uri));
+        }
+        else
+        {
+            builder.WithTcpServer(_settings.Hostname, _settings.Port);
+        }
 
         if (_settings.SessionExpiryInterval.HasValue)
         {

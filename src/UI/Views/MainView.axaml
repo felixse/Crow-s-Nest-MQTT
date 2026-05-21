@@ -441,7 +441,7 @@
           </Grid> <!-- End of Main Content Grid -->
 
           <Panel Grid.Row="0" Grid.Column="1" IsVisible="{Binding IsSettingsVisible}" Background="{DynamicResource ApplicationBackgroundBrush}">
-            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="5"> <!-- 21 rows (0-20) for Application Settings -->
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="5"> <!-- 23 rows (0-22) for Application Settings -->
                 <Grid.Styles>
                     <Style Selector="TextBlock">
                         <Setter Property="VerticalAlignment" Value="Center"/>
@@ -477,58 +477,72 @@
                 <TextBlock Grid.Row="3" Grid.Column="0" Text="Use TLS:"/>
                 <CheckBox Grid.Row="3" Grid.Column="1" IsChecked="{Binding Settings.UseTls, Mode=TwoWay}" Margin="10,0,0,0"/>
 
+                <!-- Transport Protocol -->
+                <TextBlock Grid.Row="4" Grid.Column="0" Text="Transport:"/>
+                <ComboBox Grid.Row="4" Grid.Column="1"
+                            ItemsSource="{Binding Settings.AvailableTransports}"
+                            SelectedItem="{Binding Settings.SelectedTransport, Mode=TwoWay}"
+                            MinWidth="220"/>
+
+                <!-- WebSocket Path (Conditionally Visible) -->
+                <TextBlock Grid.Row="5" Grid.Column="0" Text="WS Path:" IsVisible="{Binding Settings.IsWebSocketSelected}"/>
+                <TextBox Grid.Row="5" Grid.Column="1"
+                         Text="{Binding Settings.WebSocketPath, Mode=TwoWay}"
+                         PlaceholderText="/mqtt"
+                         IsVisible="{Binding Settings.IsWebSocketSelected}"/>
+
                 <!-- Client ID -->
-                <TextBlock Grid.Row="4" Grid.Column="0" Text="Client ID:"/>
-                <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding Settings.ClientId, Mode=TwoWay}" PlaceholderText="(auto-generated)"/>
+                <TextBlock Grid.Row="6" Grid.Column="0" Text="Client ID:"/>
+                <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding Settings.ClientId, Mode=TwoWay}" PlaceholderText="(auto-generated)"/>
 
                 <!-- Keep Alive -->
-                <TextBlock Grid.Row="5" Grid.Column="0" Text="Keep Alive (s):"/>
-                <NumericUpDown Grid.Row="5" Grid.Column="1" Value="{Binding Settings.KeepAliveIntervalSeconds, Mode=TwoWay, StringFormat=N0}"  ParsingNumberStyle="Integer" MinWidth="80" Minimum="0"/>
+                <TextBlock Grid.Row="7" Grid.Column="0" Text="Keep Alive (s):"/>
+                <NumericUpDown Grid.Row="7" Grid.Column="1" Value="{Binding Settings.KeepAliveIntervalSeconds, Mode=TwoWay, StringFormat=N0}"  ParsingNumberStyle="Integer" MinWidth="80" Minimum="0"/>
                 
                 <!-- Clean Session -->
-                <TextBlock Grid.Row="6" Grid.Column="0" Text="Clean Session:"/>
-                <CheckBox Grid.Row="6" Grid.Column="1" IsChecked="{Binding Settings.CleanSession, Mode=TwoWay}" Margin="10,0,0,0"/>
+                <TextBlock Grid.Row="8" Grid.Column="0" Text="Clean Session:"/>
+                <CheckBox Grid.Row="8" Grid.Column="1" IsChecked="{Binding Settings.CleanSession, Mode=TwoWay}" Margin="10,0,0,0"/>
 
                 <!-- Session Expiry -->
-                <TextBlock Grid.Row="7" Grid.Column="0" Text="Session Expiry (s):"/>
-                <StackPanel Grid.Row="7" Grid.Column="1" Orientation="Vertical" Spacing="5">
+                <TextBlock Grid.Row="9" Grid.Column="0" Text="Session Expiry (s):"/>
+                <StackPanel Grid.Row="9" Grid.Column="1" Orientation="Vertical" Spacing="5">
                     <NumericUpDown Value="{Binding Settings.SessionExpiryIntervalSeconds, Mode=TwoWay}" MinWidth="120"  FormatString="N0" Minimum="0" PlaceholderText="(infinite)"/>
                     <TextBlock Text="(0 = expires immediately, empty = infinite)" FontSize="10"/>
                 </StackPanel>
 
                 <!-- Authentication Mode -->
-                <TextBlock Grid.Row="8" Grid.Column="0" Text="Auth Mode:"/>
-                <ComboBox Grid.Row="8" Grid.Column="1"
+                <TextBlock Grid.Row="10" Grid.Column="0" Text="Auth Mode:"/>
+                <ComboBox Grid.Row="10" Grid.Column="1"
                             ItemsSource="{Binding Settings.AvailableAuthenticationModes}"
                             SelectedItem="{Binding Settings.SelectedAuthMode, Mode=TwoWay}"
                             MinWidth="220"/>
 
                 <!-- Auth Username (Conditionally Visible) -->
-                <TextBlock Grid.Row="9" Grid.Column="0" Text="Username:" IsVisible="{Binding Settings.IsUsernamePasswordSelected}"/>
-                <TextBox Grid.Row="9" Grid.Column="1"
+                <TextBlock Grid.Row="11" Grid.Column="0" Text="Username:" IsVisible="{Binding Settings.IsUsernamePasswordSelected}"/>
+                <TextBox Grid.Row="11" Grid.Column="1"
                          Text="{Binding Settings.AuthUsername, Mode=TwoWay}"
                          PlaceholderText="Enter username"
                          IsVisible="{Binding Settings.IsUsernamePasswordSelected}"/>
 
                 <!-- Auth Password (Conditionally Visible) -->
-                <TextBlock Grid.Row="10" Grid.Column="0" Text="Password:" IsVisible="{Binding Settings.IsUsernamePasswordSelected}"/>
-                <TextBox  Grid.Row="10" Grid.Column="1"
+                <TextBlock Grid.Row="12" Grid.Column="0" Text="Password:" IsVisible="{Binding Settings.IsUsernamePasswordSelected}"/>
+                <TextBox  Grid.Row="12" Grid.Column="1"
                              Text="{Binding Settings.AuthPassword, Mode=TwoWay}"
                              PlaceholderText="Enter password" PasswordChar="*"
                              IsVisible="{Binding Settings.IsUsernamePasswordSelected}"/>
                 
                 <!-- Enhanced Authentication Header -->
-                <TextBlock Grid.Row="11" Grid.Column="0" Grid.ColumnSpan="2" Text="Enhanced Authentication" FontWeight="Bold" FontSize="14" Margin="0,15,0,10" IsVisible="{Binding Settings.IsEnhancedAuthSelected}"/>
+                <TextBlock Grid.Row="13" Grid.Column="0" Grid.ColumnSpan="2" Text="Enhanced Authentication" FontWeight="Bold" FontSize="14" Margin="0,15,0,10" IsVisible="{Binding Settings.IsEnhancedAuthSelected}"/>
 
                 <!-- Authentication Method -->
-                <TextBlock Grid.Row="12" Grid.Column="0" Text="Auth Method:" IsVisible="{Binding Settings.IsEnhancedAuthSelected}"/>
-                <TextBox Grid.Row="12" Grid.Column="1" Text="{Binding Settings.AuthenticationMethod, Mode=TwoWay}" PlaceholderText="e.g., 'K8S-SAT'" IsVisible="{Binding Settings.IsEnhancedAuthSelected}"/>
+                <TextBlock Grid.Row="14" Grid.Column="0" Text="Auth Method:" IsVisible="{Binding Settings.IsEnhancedAuthSelected}"/>
+                <TextBox Grid.Row="14" Grid.Column="1" Text="{Binding Settings.AuthenticationMethod, Mode=TwoWay}" PlaceholderText="e.g., 'K8S-SAT'" IsVisible="{Binding Settings.IsEnhancedAuthSelected}"/>
 
                 <!-- Authentication Data -->
-                <TextBlock Grid.Row="13" Grid.Column="0" Text="Auth Data:" IsVisible="{Binding Settings.IsEnhancedAuthSelected}"/>
+                <TextBlock Grid.Row="15" Grid.Column="0" Text="Auth Data:" IsVisible="{Binding Settings.IsEnhancedAuthSelected}"/>
                 
                 <ScrollViewer                            
-                            Grid.Row="13"
+                            Grid.Row="15"
                             Grid.Column="1"
                             IsVisible="{Binding Settings.IsEnhancedAuthSelected}"
                             HorizontalScrollBarVisibility="Visible"
@@ -546,22 +560,22 @@
                 </ScrollViewer>
 
                 <!-- General Settings Header -->
-                <TextBlock Grid.Row="14" Grid.Column="0" Grid.ColumnSpan="2" Text="General Settings" FontWeight="Bold" FontSize="14" Margin="0,15,0,10"/>
+                <TextBlock Grid.Row="16" Grid.Column="0" Grid.ColumnSpan="2" Text="General Settings" FontWeight="Bold" FontSize="14" Margin="0,15,0,10"/>
 
                 <!-- Export Format -->
-                <TextBlock Grid.Row="15" Grid.Column="0" Text="Export Format:"/>
-                <ComboBox Grid.Row="15" Grid.Column="1" ItemsSource="{Binding Settings.AvailableExportTypes}" SelectedItem="{Binding Settings.ExportFormat, Mode=TwoWay}" MinWidth="220" />
+                <TextBlock Grid.Row="17" Grid.Column="0" Text="Export Format:"/>
+                <ComboBox Grid.Row="17" Grid.Column="1" ItemsSource="{Binding Settings.AvailableExportTypes}" SelectedItem="{Binding Settings.ExportFormat, Mode=TwoWay}" MinWidth="220" />
 
                 <!-- Export Path -->
-                <TextBlock Grid.Row="16" Grid.Column="0" Text="Export Path:"/>
-                <TextBox Grid.Row="16" Grid.Column="1" Text="{Binding Settings.ExportPath, Mode=TwoWay}" />
+                <TextBlock Grid.Row="18" Grid.Column="0" Text="Export Path:"/>
+                <TextBox Grid.Row="18" Grid.Column="1" Text="{Binding Settings.ExportPath, Mode=TwoWay}" />
 
                 <!-- Application Settings Header -->
-                <TextBlock Grid.Row="17" Grid.Column="0" Grid.ColumnSpan="2" Text="Application Settings" FontWeight="Bold" FontSize="14" Margin="0,15,0,10"/>
+                <TextBlock Grid.Row="19" Grid.Column="0" Grid.ColumnSpan="2" Text="Application Settings" FontWeight="Bold" FontSize="14" Margin="0,15,0,10"/>
 
                 <!-- Subscription QoS -->
-                <TextBlock Grid.Row="18" Grid.Column="0" Text="Subscription QoS:"/>
-                <Grid Grid.Row="18" Grid.Column="1" RowDefinitions="Auto,Auto">
+                <TextBlock Grid.Row="20" Grid.Column="0" Text="Subscription QoS:"/>
+                <Grid Grid.Row="20" Grid.Column="1" RowDefinitions="Auto,Auto">
                     <ComboBox Grid.Row="0" SelectedIndex="{Binding Settings.SubscriptionQoS, Mode=TwoWay}" MinWidth="120">
                         <ComboBoxItem Content="0 - At Most Once"/>
                         <ComboBoxItem Content="1 - At Least Once (Default)"/>
@@ -571,7 +585,7 @@
                 </Grid>
 
                 <!-- Topic Buffer Limits List -->
-                <ItemsControl Grid.Row="19" Grid.Column="0" Grid.ColumnSpan="2" ItemsSource="{Binding Settings.TopicSpecificLimits}" Margin="0,0,0,5">
+                <ItemsControl Grid.Row="21" Grid.Column="0" Grid.ColumnSpan="2" ItemsSource="{Binding Settings.TopicSpecificLimits}" Margin="0,0,0,5">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:TopicBufferLimitViewModel}">
                             <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto" Margin="0,2">
@@ -584,7 +598,7 @@
                 </ItemsControl>
                 
                 <!-- Add New Limit Button -->
-                <Button Grid.Row="20" Grid.Column="0" Grid.ColumnSpan="2" Content="Add New Limit" Command="{Binding Settings.AddTopicLimitCommand}" HorizontalAlignment="Left" Margin="0,5,0,0"/>
+                <Button Grid.Row="22" Grid.Column="0" Grid.ColumnSpan="2" Content="Add New Limit" Command="{Binding Settings.AddTopicLimitCommand}" HorizontalAlignment="Left" Margin="0,5,0,0"/>
 
             </Grid>
         </Panel>

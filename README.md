@@ -61,6 +61,7 @@ xattr -dr com.apple.quarantine /Applications/CrowsNestMQTT.app
     * Strikethrough and dimmed text in message history for expired messages
     * Yellow warning icon in metadata view for the expiry field
 * Supports TLS connection to MQTT Broker 🔐
+* Supports WebSocket transport (ws:// and wss://) 🌐
 * Can handle huge amount of MQTT messages 
 * Allows filtering of MQTT topics by pattern 🗃️
 * Allows searching of pattern within MQTT message payloads 🔍
@@ -171,7 +172,7 @@ Messages with MQTT V5 `message-expiry-interval` are visually marked when they ex
 
 Crow's Nest MQTT provides a command interface (likely accessible via a dedicated input field) for quick actions. Commands are typically prefixed with a colon (`:`). You can quickly access this input field using the `Ctrl + Shift + P` keyboard shortcut.
 
-*   `:connect [<server:port>] [<username>] [<password>]` - Connect to an MQTT broker. If arguments are omitted, connection details are loaded from settings.
+*   `:connect [<server:port>] [<username>] [<password>]` - Connect to an MQTT broker. If arguments are omitted, connection details are loaded from settings. Supports WebSocket URIs: `:connect ws://host:port/path` or `:connect wss://host:port/path`.
 *   `:disconnect` - Disconnect from the current MQTT broker.
 *   `:export <json|txt> <filepath>` - Export messages to a file in JSON or plain text format. If arguments are omitted, the path and format are loaded from settings.
 *   `:export all` - Export all messages from the currently selected topic to a single JSON file in the configured export path. The file contains an array of all messages from that topic.
@@ -242,7 +243,11 @@ When connecting to a broker with Enhanced Authentication, the client and broker 
 
 ## dotnet Aspire
 
-Crow's NestMQTT automatically connects to the MQTT Broker endpoint defined via dotnet Aspire environment variables. It supports both `services__mqtt__mqtt__0` and `services__mqtt__default__0` naming conventions. For example, the environment variable would contain a value like `mqtt://localhost:42069`.
+Crow's NestMQTT automatically connects to the MQTT Broker endpoint defined via dotnet Aspire environment variables. It supports both `services__mqtt__mqtt__0` and `services__mqtt__default__0` naming conventions. The endpoint URI scheme determines the transport protocol:
+
+- `mqtt://localhost:1883` → TCP connection
+- `ws://localhost:8083/mqtt` → WebSocket connection
+- `wss://localhost:8084/mqtt` → Secure WebSocket connection (TLS)
 
 When an Aspire endpoint environment variable is detected, the application:
 1. Parses the hostname and port from the URI
@@ -287,6 +292,8 @@ This is useful for:
 | `CROWSNEST__AUTH_METHOD` | Enhanced auth method (when AUTH_MODE=enhanced) | string | `SCRAM-SHA-1` |
 | `CROWSNEST__AUTH_DATA` | Enhanced auth data (when AUTH_MODE=enhanced) | string | |
 | `CROWSNEST__USE_TLS` | Enable TLS encryption | bool | `true` |
+| `CROWSNEST__TRANSPORT` | Transport protocol | enum | `Tcp`, `WebSocket` |
+| `CROWSNEST__WEBSOCKET_PATH` | WebSocket path (when TRANSPORT=WebSocket) | string | `/mqtt` |
 | `CROWSNEST__SUBSCRIPTION_QOS` | Subscription QoS level (0, 1, or 2) | int | `1` |
 | `CROWSNEST__EXPORT_FORMAT` | Default export format | enum | `json`, `txt` |
 | `CROWSNEST__EXPORT_PATH` | Default export file path | string | `/tmp/exports` |
@@ -307,6 +314,26 @@ This is useful for:
 ```bash
 # Set by Aspire automatically:
 services__mqtt__mqtt__0=mqtt://localhost:41883
+
+# Or for WebSocket transport:
+services__mqtt__default__0=ws://localhost:8083/mqtt
+```
+
+### Example: WebSocket Configuration
+
+```bash
+# Connect via WebSocket
+export CROWSNEST__HOSTNAME=broker.example.com
+export CROWSNEST__PORT=8083
+export CROWSNEST__TRANSPORT=WebSocket
+export CROWSNEST__WEBSOCKET_PATH=/mqtt
+
+# Or via secure WebSocket
+export CROWSNEST__HOSTNAME=broker.example.com
+export CROWSNEST__PORT=8084
+export CROWSNEST__TRANSPORT=WebSocket
+export CROWSNEST__USE_TLS=true
+export CROWSNEST__WEBSOCKET_PATH=/mqtt
 ```
 
 ### Example: Manual Configuration

@@ -29,10 +29,11 @@ if (-not (Test-Path $nuget)) {
     Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/MQTTnet/5.1.0.1559" -OutFile $nuget
 }
 $extractPath = Join-Path $env:TEMP "MQTTnet_extracted_5.1.0"
-if (-not (Test-Path $extractPath)) {
+$dllPath = Join-Path $extractPath "lib\net8.0\MQTTnet.dll"
+if (-not (Test-Path $dllPath)) {
+    if (Test-Path $extractPath) { Remove-Item $extractPath -Recurse -Force }
     Expand-Archive -Path $nuget -DestinationPath $extractPath -Force
 }
-$dllPath = Join-Path $extractPath "lib\net8.0\MQTTnet.dll"
 Add-Type -Path $dllPath
 
 # Read settings

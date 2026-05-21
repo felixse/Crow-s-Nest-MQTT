@@ -25,6 +25,7 @@ using System.Linq; // For .Select
 [JsonSerializable(typeof(CrowsNestMqtt.BusinessLogic.Configuration.EnhancedAuthenticationMode))] // Added for AuthMode
 [JsonSerializable(typeof(CrowsNestMqtt.BusinessLogic.Exporter.ExportTypes))]
 [JsonSerializable(typeof(Nullable<CrowsNestMqtt.BusinessLogic.Exporter.ExportTypes>))]
+[JsonSerializable(typeof(CrowsNestMqtt.BusinessLogic.Configuration.TransportProtocol))]
 [JsonSerializable(typeof(ObservableCollection<TopicBufferLimitViewModel>))]
 [JsonSerializable(typeof(TopicBufferLimitViewModel))]
 [JsonSerializable(typeof(TopicBufferLimit))]
@@ -78,6 +79,35 @@ public class SettingsViewModel : ReactiveObject
     {
         get => _useTls;
         set => this.RaiseAndSetIfChanged(ref _useTls, value);
+    }
+
+    private TransportProtocol _selectedTransport = TransportProtocol.Tcp;
+    public TransportProtocol SelectedTransport
+    {
+        get => _selectedTransport;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _selectedTransport, value);
+            this.RaisePropertyChanged(nameof(IsWebSocketSelected));
+        }
+    }
+
+    /// <summary>
+    /// Whether WebSocket transport is currently selected (for UI visibility binding).
+    /// </summary>
+    public bool IsWebSocketSelected => SelectedTransport == TransportProtocol.WebSocket;
+
+    private readonly ReadOnlyObservableCollection<TransportProtocol> _availableTransports;
+    public ReadOnlyObservableCollection<TransportProtocol> AvailableTransports => _availableTransports;
+
+    private string? _webSocketPath;
+    /// <summary>
+    /// WebSocket path (e.g., "/mqtt"). Only used when transport is WebSocket.
+    /// </summary>
+    public string? WebSocketPath
+    {
+        get => _webSocketPath;
+        set => this.RaiseAndSetIfChanged(ref _webSocketPath, value);
     }
 
     private int _subscriptionQoS = 1;
@@ -138,6 +168,12 @@ public class SettingsViewModel : ReactiveObject
             this.WhenAnyValue(x => x.SubscriptionQoS),
             (_, _, _, _, _, _, _, _, _, _, _, _, _, _, _) => Unit.Default);
 
+        // Observable for transport-related property changes
+        var transportPropertiesChanged = Observable.CombineLatest(
+            this.WhenAnyValue(x => x.SelectedTransport),
+            this.WhenAnyValue(x => x.WebSocketPath),
+            (_, _) => Unit.Default);
+
         // Observable for changes within the TopicSpecificLimits collection (add/remove)
         var collectionChanged = Observable.FromEventPattern<System.Collections.Specialized.NotifyCollectionChangedEventHandler, System.Collections.Specialized.NotifyCollectionChangedEventArgs>(
             h => TopicSpecificLimits.CollectionChanged += h,
@@ -170,6 +206,7 @@ public class SettingsViewModel : ReactiveObject
         // Merge all change signals
         Observable.Merge(
                 simplePropertiesChanged,
+                transportPropertiesChanged,
                 collectionChanged,
                 itemPropertiesChanged.StartWith(Unit.Default) // StartWith to ensure initial state is considered if items exist
             )
@@ -194,6 +231,9 @@ public class SettingsViewModel : ReactiveObject
                 AuthModeSelection.UsernamePassword,
                 AuthModeSelection.Enhanced
             });
+
+        _availableTransports = new ReadOnlyObservableCollection<TransportProtocol>(
+            new ObservableCollection<TransportProtocol>(Enum.GetValues(typeof(TransportProtocol)).Cast<TransportProtocol>()));
     }
 
     private string _hostname = "localhost";
@@ -337,7 +377,9 @@ public class SettingsViewModel : ReactiveObject
             ExportFormat,
             ExportPath,
             UseTls,
-            SubscriptionQoS: SubscriptionQoS
+            SubscriptionQoS: SubscriptionQoS,
+            Transport: SelectedTransport,
+            WebSocketPath: WebSocketPath
         )
         {
             TopicSpecificBufferLimits = topicLimits
@@ -356,6 +398,8 @@ public class SettingsViewModel : ReactiveObject
         ExportPath = settingsData.ExportPath;
         UseTls = settingsData.UseTls;
         SubscriptionQoS = settingsData.SubscriptionQoS;
+        SelectedTransport = settingsData.Transport;
+        WebSocketPath = settingsData.WebSocketPath;
         TopicSpecificLimits.Clear();
         
         // Ensure we always have the default '#' limit
@@ -421,6 +465,8 @@ public class SettingsViewModel : ReactiveObject
         if (overrides.SubscriptionQoS.HasValue) SubscriptionQoS = overrides.SubscriptionQoS.Value;
         if (overrides.ExportFormat.HasValue) ExportFormat = overrides.ExportFormat.Value;
         if (overrides.ExportPath != null) ExportPath = overrides.ExportPath;
+        if (overrides.Transport.HasValue) SelectedTransport = overrides.Transport.Value;
+        if (overrides.WebSocketPath != null) WebSocketPath = overrides.WebSocketPath;
 
         if (overrides.AuthMode != null)
         {

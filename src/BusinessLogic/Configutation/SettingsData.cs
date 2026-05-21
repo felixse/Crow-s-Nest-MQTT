@@ -17,7 +17,9 @@ public record SettingsData(
     int MaxTopicLimit = 500,
     int ParallelismDegree = 4,
     int TimeoutPeriodSeconds = 5,
-    int SubscriptionQoS = 1)
+    int SubscriptionQoS = 1,
+    TransportProtocol Transport = TransportProtocol.Tcp,
+    string? WebSocketPath = null)
 {
     public IList<TopicBufferLimit> TopicSpecificBufferLimits { get; init; } = new List<TopicBufferLimit>();
     /// <summary>

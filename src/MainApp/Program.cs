@@ -96,13 +96,7 @@ class Program
     {
         return AppBuilder.Configure<CrowsNestMqtt.UI.App>() // Configure the App from UI project
             .UsePlatformDetect()
-            .With(new Win32PlatformOptions
-            {
-                // WinUIComposition is required for Mica/transparency backdrop support
-                CompositionMode = [Win32CompositionMode.WinUIComposition],
-                RenderingMode = [Win32RenderingMode.AngleEgl, Win32RenderingMode.Software]
-            })
-            .LogToTrace() // Added for better diagnostics if needed
+            .LogToTrace()
             .UseReactiveUI(_ => { })
             .AfterSetup(builder => // Add desktop-specific setup here
             {

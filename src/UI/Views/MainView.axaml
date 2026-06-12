@@ -24,11 +24,15 @@
     </Design.DataContext>
 
     <UserControl.Styles>
-        <!--  GridSplitters: transparent by default, visible on hover  -->
+        <!--  GridSplitters: 4px pill, transparent at rest, clearly highlighted on hover/drag  -->
         <Style Selector="GridSplitter">
             <Setter Property="Background" Value="Transparent" />
+            <Setter Property="CornerRadius" Value="4" />
         </Style>
         <Style Selector="GridSplitter:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SystemControlHighlightListLowBrush}" />
+        </Style>
+        <Style Selector="GridSplitter:pressed">
             <Setter Property="Background" Value="{DynamicResource SystemControlHighlightListLowBrush}" />
         </Style>
         <!--  DataGrid headers blend into the surrounding card background  -->
@@ -85,7 +89,7 @@
         <!--  Toolbar  -->
         <Border
             Grid.Row="1"
-            Margin="8,4"
+            Margin="8,4,8,0"
             Classes="Card">
             <controls:FACommandBar DefaultLabelPosition="Right">
                 <controls:FACommandBar.PrimaryCommands>
@@ -187,7 +191,7 @@
                 <Border
                     Grid.Column="0"
                     MinWidth="200"
-                    Margin="8"
+                    Margin="8,8,0,8"
                     Classes="Card">
                     <Grid RowDefinitions="Auto,*">
                         <Border
@@ -201,53 +205,55 @@
                                 LineHeight="20"
                                 Text="Topics" />
                         </Border>
-                    <TreeView
-                        Grid.Row="1"
-                        x:Name="TopicTreeView"
-                        HorizontalAlignment="Stretch"
-                        Background="Transparent"
-                        Focusable="True"
-                        ItemsSource="{Binding TopicTreeNodes}"
-                        ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                        ScrollViewer.VerticalScrollBarVisibility="Auto"
-                        SelectedItem="{Binding SelectedNode, Mode=TwoWay}">
-                        <TreeView.ItemTemplate>
-                            <TreeDataTemplate DataType="{x:Type vm:NodeViewModel}" ItemsSource="{Binding Children}">
-                                <StackPanel Orientation="Horizontal" Spacing="5">
-                                    <TextBlock
-                                        VerticalAlignment="Center"
-                                        Text="{Binding Name}"
-                                        TextWrapping="NoWrap" />
-                                    <TextBlock
-                                        VerticalAlignment="Center"
-                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                        Text="{Binding MessageCount}" />
-                                </StackPanel>
-                            </TreeDataTemplate>
-                        </TreeView.ItemTemplate>
-                        <TreeView.Styles>
-                            <!--  Style the internal ScrollViewer in TreeView  -->
-                            <Style Selector="TreeView > ScrollViewer">
-                                <Setter Property="HorizontalScrollBarVisibility" Value="Auto" />
-                                <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
-                            </Style>
-                            <Style x:DataType="vm:NodeViewModel" Selector="TreeViewItem">
-                                <Setter Property="IsVisible" Value="{Binding IsVisible}" />
-                                <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
-                            </Style>
-                        </TreeView.Styles>
-                    </TreeView>
+                        <TreeView
+                            x:Name="TopicTreeView"
+                            Grid.Row="1"
+                            HorizontalAlignment="Stretch"
+                            Background="Transparent"
+                            Focusable="True"
+                            ItemsSource="{Binding TopicTreeNodes}"
+                            ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                            ScrollViewer.VerticalScrollBarVisibility="Auto"
+                            SelectedItem="{Binding SelectedNode, Mode=TwoWay}">
+                            <TreeView.ItemTemplate>
+                                <TreeDataTemplate DataType="{x:Type vm:NodeViewModel}" ItemsSource="{Binding Children}">
+                                    <StackPanel Orientation="Horizontal" Spacing="5">
+                                        <TextBlock
+                                            VerticalAlignment="Center"
+                                            Text="{Binding Name}"
+                                            TextWrapping="NoWrap" />
+                                        <TextBlock
+                                            VerticalAlignment="Center"
+                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                            Text="{Binding MessageCount}" />
+                                    </StackPanel>
+                                </TreeDataTemplate>
+                            </TreeView.ItemTemplate>
+                            <TreeView.Styles>
+                                <!--  Style the internal ScrollViewer in TreeView  -->
+                                <Style Selector="TreeView > ScrollViewer">
+                                    <Setter Property="HorizontalScrollBarVisibility" Value="Auto" />
+                                    <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+                                </Style>
+                                <Style x:DataType="vm:NodeViewModel" Selector="TreeViewItem">
+                                    <Setter Property="IsVisible" Value="{Binding IsVisible}" />
+                                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                                </Style>
+                            </TreeView.Styles>
+                        </TreeView>
                     </Grid>
                 </Border>
 
-                <!--  Vertical Grid Splitter  -->
+                <!--  Vertical Grid Splitter: 4px pill centred in an 8px gap (2px clear on each side)  -->
                 <GridSplitter
                     Grid.Column="1"
                     Width="4"
-                    Margin="0,4,0,4"
+                    Margin="2,8,2,8"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Stretch"
-                    CornerRadius="2"
+                    Cursor="SizeWestEast"
+                    Focusable="True"
+                    IsTabStop="True"
                     ResizeDirection="Columns" />
 
                 <!--  Right Panel: Details and History  -->
@@ -260,9 +266,8 @@
                     <!--  Row 0: Message Details (Metadata & User Properties)  -->
                     <Grid
                         Grid.Row="0"
-                        Margin="8"
-                        ColumnDefinitions="*,*"
-                        ColumnSpacing="16">
+                        Margin="0,8,8,0"
+                        ColumnDefinitions="*,Auto,*">
                         <!--  Column 0: Metadata  -->
                         <Border Grid.Column="0" Classes="Card">
                             <Grid Grid.Row="0" RowDefinitions="Auto,*">
@@ -351,11 +356,21 @@
                             </Grid>
                         </Border>
 
-                        <!--  Column 1: User Properties  -->
-                        <Border
+                        <!--  Column 1: Vertical Grid Splitter: 4px pill centred in an 8px gap  -->
+                        <GridSplitter
                             Grid.Column="1"
-                            Classes="Card"
-                            IsVisible="{Binding HasUserProperties}">
+                            Width="4"
+                            Margin="2,0,2,0"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Stretch"
+                            AutomationProperties.Name="Details Splitter"
+                            Cursor="SizeWestEast"
+                            Focusable="True"
+                            IsTabStop="True"
+                            ResizeDirection="Columns" />
+
+                        <!--  Column 2: User Properties  -->
+                        <Border Grid.Column="2" Classes="Card">
                             <Grid RowDefinitions="Auto,*">
                                 <Border
                                     Grid.Row="0"
@@ -375,7 +390,6 @@
                                     CanUserResizeColumns="True"
                                     GridLinesVisibility="None"
                                     IsReadOnly="True"
-                                    IsVisible="{Binding HasUserProperties}"
                                     ItemsSource="{Binding MessageUserProperties}">
                                     <DataGrid.Columns>
                                         <DataGridTextColumn
@@ -392,14 +406,14 @@
                         </Border>
                     </Grid>
 
-                    <!--  Row 1: Horizontal Grid Splitter  -->
+                    <!--  Row 1: Horizontal Grid Splitter: 4px pill centred in an 8px gap (2px clear on each side)  -->
                     <GridSplitter
                         Grid.Row="1"
                         Height="4"
+                        Margin="0,2,8,2"
                         HorizontalAlignment="Stretch"
                         VerticalAlignment="Center"
                         AutomationProperties.Name="Section Splitter 1"
-                        CornerRadius="2"
                         Cursor="SizeNorthSouth"
                         Focusable="True"
                         IsTabStop="True"
@@ -408,9 +422,8 @@
                     <!--  Row 2: Payload Card  -->
                     <Border
                         Grid.Row="2"
-                        Margin="8"
-                        Classes="Card"
-                        IsVisible="{Binding IsAnyPayloadViewerVisible}">
+                        Margin="0,0,8,0"
+                        Classes="Card">
                         <Grid RowDefinitions="Auto,*">
                             <Border
                                 Grid.Row="0"
@@ -427,24 +440,23 @@
                         </Grid>
                     </Border>
 
-                    <!--  Row 3: Horizontal Grid Splitter (Visible if either viewer is visible)  -->
+                    <!--  Row 3: Horizontal Grid Splitter: 4px pill centred in an 8px gap  -->
                     <GridSplitter
                         Grid.Row="3"
                         Height="4"
+                        Margin="0,2,8,2"
                         HorizontalAlignment="Stretch"
                         VerticalAlignment="Center"
                         AutomationProperties.Name="Section Splitter 2"
-                        CornerRadius="2"
                         Cursor="SizeNorthSouth"
                         Focusable="True"
                         IsTabStop="True"
-                        IsVisible="{Binding IsAnyPayloadViewerVisible}"
                         ResizeDirection="Rows" />
 
                     <!--  Row 4: Message History  -->
                     <Border
                         Grid.Row="4"
-                        Margin="8"
+                        Margin="0,0,8,8"
                         Classes="Card">
                         <Grid RowDefinitions="Auto,*">
                             <Border
@@ -458,62 +470,62 @@
                                     LineHeight="20"
                                     Text="Messages" />
                             </Border>
-                        <ListBox
-                            Grid.Row="1"
-                            x:Name="MessageHistoryListBox"
-                            ItemsSource="{Binding FilteredMessageHistory}"
-                            SelectedItem="{Binding SelectedMessage, Mode=TwoWay}">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate x:DataType="vm:MessageViewModel">
-                                    <!--  Use DockPanel for layout: Time Left, Buttons Right, Payload Center  -->
-                                    <DockPanel MinWidth="300" LastChildFill="True">
-                                        <!--  Copy Button (Right Aligned)  -->
-                                        <Button
-                                            Margin="4,0,0,0"
-                                            Padding="4"
-                                            VerticalAlignment="Center"
-                                            Command="{Binding $parent[ListBox].DataContext.CopyPayloadCommand}"
-                                            CommandParameter="{Binding}"
-                                            DockPanel.Dock="Right"
-                                            ToolTip.Tip="Copy Payload">
-                                            <PathIcon
-                                                Width="12"
-                                                Height="12"
-                                                Data="{StaticResource copy_regular}" />
-                                        </Button>
+                            <ListBox
+                                x:Name="MessageHistoryListBox"
+                                Grid.Row="1"
+                                ItemsSource="{Binding FilteredMessageHistory}"
+                                SelectedItem="{Binding SelectedMessage, Mode=TwoWay}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:MessageViewModel">
+                                        <!--  Use DockPanel for layout: Time Left, Buttons Right, Payload Center  -->
+                                        <DockPanel MinWidth="300" LastChildFill="True">
+                                            <!--  Copy Button (Right Aligned)  -->
+                                            <Button
+                                                Margin="4,0,0,0"
+                                                Padding="4"
+                                                VerticalAlignment="Center"
+                                                Command="{Binding $parent[ListBox].DataContext.CopyPayloadCommand}"
+                                                CommandParameter="{Binding}"
+                                                DockPanel.Dock="Right"
+                                                ToolTip.Tip="Copy Payload">
+                                                <PathIcon
+                                                    Width="12"
+                                                    Height="12"
+                                                    Data="{StaticResource copy_regular}" />
+                                            </Button>
 
-                                        <!--  T022: Export Button (Right Aligned, left of Copy Button)  -->
-                                        <Button
-                                            Margin="4,0,0,0"
-                                            Padding="4"
-                                            VerticalAlignment="Center"
-                                            Command="{Binding $parent[ListBox].DataContext.ExportMessageCommand}"
-                                            CommandParameter="{Binding}"
-                                            DockPanel.Dock="Right"
-                                            ToolTip.Tip="Export this message">
-                                            <PathIcon
-                                                Width="12"
-                                                Height="12"
-                                                Data="{StaticResource export_regular}" />
-                                        </Button>
+                                            <!--  T022: Export Button (Right Aligned, left of Copy Button)  -->
+                                            <Button
+                                                Margin="4,0,0,0"
+                                                Padding="4"
+                                                VerticalAlignment="Center"
+                                                Command="{Binding $parent[ListBox].DataContext.ExportMessageCommand}"
+                                                CommandParameter="{Binding}"
+                                                DockPanel.Dock="Right"
+                                                ToolTip.Tip="Export this message">
+                                                <PathIcon
+                                                    Width="12"
+                                                    Height="12"
+                                                    Data="{StaticResource export_regular}" />
+                                            </Button>
 
-                                        <!--  DisplayText (Fills remaining space)  -->
-                                        <TextBlock
-                                            VerticalAlignment="Center"
-                                            Classes.Expired="{Binding IsExpired}"
-                                            Text="{Binding DisplayText}"
-                                            TextTrimming="CharacterEllipsis">
-                                            <TextBlock.Styles>
-                                                <Style Selector="TextBlock.Expired">
-                                                    <Setter Property="TextDecorations" Value="Strikethrough" />
-                                                    <Setter Property="Foreground" Value="Gray" />
-                                                </Style>
-                                            </TextBlock.Styles>
-                                        </TextBlock>
-                                    </DockPanel>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
+                                            <!--  DisplayText (Fills remaining space)  -->
+                                            <TextBlock
+                                                VerticalAlignment="Center"
+                                                Classes.Expired="{Binding IsExpired}"
+                                                Text="{Binding DisplayText}"
+                                                TextTrimming="CharacterEllipsis">
+                                                <TextBlock.Styles>
+                                                    <Style Selector="TextBlock.Expired">
+                                                        <Setter Property="TextDecorations" Value="Strikethrough" />
+                                                        <Setter Property="Foreground" Value="Gray" />
+                                                    </Style>
+                                                </TextBlock.Styles>
+                                            </TextBlock>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
                         </Grid>
                     </Border>
                 </Grid>
@@ -526,13 +538,19 @@
         <!--  Status Bar  -->
         <Border
             Grid.Row="3"
-            Padding="8,4"
+            Height="32"
+            Padding="8,0"
             Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
             BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
             BorderThickness="0,1,0,0">
-            <StackPanel Orientation="Horizontal" Spacing="8">
+            <StackPanel
+                Orientation="Horizontal"
+                Spacing="8"
+                TextElement.FontSize="12">
                 <TextBlock VerticalAlignment="Center" Text="Status:" />
                 <PathIcon
+                    Width="12"
+                    Height="12"
                     VerticalAlignment="Center"
                     Classes.IsConnected="{Binding IsConnected}"
                     Classes.IsConnecting="{Binding IsConnecting}"

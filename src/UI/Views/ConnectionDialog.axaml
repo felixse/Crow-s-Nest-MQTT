@@ -1,102 +1,205 @@
-<UserControl xmlns="https://github.com/avaloniaui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:vm="using:CrowsNestMqtt.UI.ViewModels"
-             mc:Ignorable="d"
-             x:Class="CrowsNestMqtt.UI.Views.ConnectionDialog"
-             x:DataType="vm:SettingsViewModel"
-             x:CompileBindings="False">
+<UserControl
+    x:Class="CrowsNestMqtt.UI.Views.ConnectionDialog"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:FluentAvalonia.UI.Controls"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:CrowsNestMqtt.UI.ViewModels"
+    x:CompileBindings="False"
+    x:DataType="vm:SettingsViewModel"
+    mc:Ignorable="d">
     <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
         <Grid.Styles>
-             <Style Selector="TextBlock">
-                <Setter Property="VerticalAlignment" Value="Center"/>
-                <Setter Property="Margin" Value="0,0,4,0"/>
+            <Style Selector="TextBlock">
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Margin" Value="0,0,4,0" />
             </Style>
             <Style Selector="TextBox, NumericUpDown, CheckBox, ComboBox">
-                <Setter Property="VerticalAlignment" Value="Center"/>
-                <Setter Property="Margin" Value="0,0,0,4"/>
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Margin" Value="0,0,0,4" />
             </Style>
         </Grid.Styles>
 
-        <!-- Hostname -->
-        <TextBlock Grid.Row="0" Grid.Column="0" Text="Hostname:"/>
-        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Hostname, Mode=TwoWay}"/>
+        <!--  Hostname  -->
+        <TextBlock
+            Grid.Row="0"
+            Grid.Column="0"
+            Text="Hostname:" />
+        <TextBox
+            Grid.Row="0"
+            Grid.Column="1"
+            Text="{Binding Hostname, Mode=TwoWay}" />
 
-        <!-- Port -->
-        <TextBlock Grid.Row="1" Grid.Column="0" Text="Port:"/>
-        <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding Port, Mode=TwoWay, StringFormat=N0}" ParsingNumberStyle="Integer" Minimum="1" Maximum="65535"/>
+        <!--  Port  -->
+        <TextBlock
+            Grid.Row="1"
+            Grid.Column="0"
+            Text="Port:" />
+        <NumericUpDown
+            Grid.Row="1"
+            Grid.Column="1"
+            Maximum="65535"
+            Minimum="1"
+            ParsingNumberStyle="Integer"
+            Value="{Binding Port, Mode=TwoWay, StringFormat=N0}" />
 
-        <!-- Use TLS -->
-        <TextBlock Grid.Row="2" Grid.Column="0" Text="Use TLS:"/>
-        <CheckBox Grid.Row="2" Grid.Column="1" IsChecked="{Binding UseTls, Mode=TwoWay}" Margin="8,0,0,0"/>
+        <!--  Use TLS  -->
+        <TextBlock
+            Grid.Row="2"
+            Grid.Column="0"
+            Text="Use TLS:" />
+        <CheckBox
+            Grid.Row="2"
+            Grid.Column="1"
+            IsChecked="{Binding UseTls, Mode=TwoWay}" />
 
-        <!-- Client ID -->
-        <TextBlock Grid.Row="3" Grid.Column="0" Text="Client ID:"/>
-        <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding ClientId, Mode=TwoWay}" PlaceholderText="(auto-generated)"/>
+        <!--  Client ID  -->
+        <TextBlock
+            Grid.Row="3"
+            Grid.Column="0"
+            Text="Client ID:" />
+        <TextBox
+            Grid.Row="3"
+            Grid.Column="1"
+            PlaceholderText="(auto-generated)"
+            Text="{Binding ClientId, Mode=TwoWay}" />
 
-        <!-- Keep Alive -->
-        <TextBlock Grid.Row="4" Grid.Column="0" Text="Keep Alive (s):"/>
-        <NumericUpDown Grid.Row="4" Grid.Column="1" Value="{Binding KeepAliveIntervalSeconds, Mode=TwoWay, StringFormat=N0}" ParsingNumberStyle="Integer" MinWidth="80" Minimum="0"/>
+        <!--  Keep Alive  -->
+        <TextBlock
+            Grid.Row="4"
+            Grid.Column="0"
+            Text="Keep Alive (s):" />
+        <NumericUpDown
+            Grid.Row="4"
+            Grid.Column="1"
+            MinWidth="80"
+            Minimum="0"
+            ParsingNumberStyle="Integer"
+            Value="{Binding KeepAliveIntervalSeconds, Mode=TwoWay, StringFormat=N0}" />
 
-        <!-- Clean Session -->
-        <TextBlock Grid.Row="5" Grid.Column="0" Text="Clean Session:"/>
-        <CheckBox Grid.Row="5" Grid.Column="1" IsChecked="{Binding CleanSession, Mode=TwoWay}" Margin="8,0,0,0"/>
+        <!--  Clean Session  -->
+        <TextBlock
+            Grid.Row="5"
+            Grid.Column="0"
+            Text="Clean Session:" />
+        <CheckBox
+            Grid.Row="5"
+            Grid.Column="1"
+            IsChecked="{Binding CleanSession, Mode=TwoWay}" />
 
-        <!-- Session Expiry -->
-        <TextBlock Grid.Row="6" Grid.Column="0" Text="Session Expiry (s):"/>
-        <StackPanel Grid.Row="6" Grid.Column="1" Orientation="Vertical" Spacing="4">
-            <NumericUpDown Value="{Binding SessionExpiryIntervalSeconds, Mode=TwoWay}" MinWidth="120" FormatString="N0" Minimum="0" PlaceholderText="(infinite)"/>
-            <TextBlock Text="(0 = expires immediately, empty = infinite)" FontSize="10"/>
-        </StackPanel>
+        <!--  Session Expiry  -->
+        <TextBlock
+            Grid.Row="6"
+            Grid.Column="0"
+            Text="Session Expiry (s):" />
+        <Grid
+            Grid.Row="6"
+            Grid.Column="1"
+            VerticalAlignment="Center"
+            ColumnDefinitions="*,Auto">
+            <NumericUpDown
+                Grid.Column="0"
+                FormatString="N0"
+                Minimum="0"
+                PlaceholderText="(infinite)"
+                Value="{Binding SessionExpiryIntervalSeconds, Mode=TwoWay}" />
+            <controls:FAFontIcon
+                Grid.Column="1"
+                Margin="4,0,0,0"
+                VerticalAlignment="Baseline"
+                FontFamily="{DynamicResource SymbolThemeFontFamily}"
+                FontSize="20"
+                Glyph="&#xE946;"
+                ToolTip.Tip="(0 = expires immediately, empty = infinite)" />
+        </Grid>
 
-        <!-- Authentication Mode -->
-        <TextBlock Grid.Row="7" Grid.Column="0" Text="Auth Mode:"/>
-        <ComboBox Grid.Row="7" Grid.Column="1"
-                    ItemsSource="{Binding AvailableAuthenticationModes}"
-                    SelectedItem="{Binding SelectedAuthMode, Mode=TwoWay}"
-                    MinWidth="220"/>
+        <!--  Authentication Mode  -->
+        <TextBlock
+            Grid.Row="7"
+            Grid.Column="0"
+            Text="Auth Mode:" />
+        <ComboBox
+            Grid.Row="7"
+            Grid.Column="1"
+            MinWidth="220"
+            ItemsSource="{Binding AvailableAuthenticationModes}"
+            SelectedItem="{Binding SelectedAuthMode, Mode=TwoWay}" />
 
-        <!-- Auth Username (Conditionally Visible) -->
-        <TextBlock Grid.Row="8" Grid.Column="0" Text="Username:" IsVisible="{Binding IsUsernamePasswordSelected}"/>
-        <TextBox Grid.Row="8" Grid.Column="1"
-                 Text="{Binding AuthUsername, Mode=TwoWay}"
-                 PlaceholderText="Enter username"
-                 IsVisible="{Binding IsUsernamePasswordSelected}"/>
+        <!--  Auth Username (Conditionally Visible)  -->
+        <TextBlock
+            Grid.Row="8"
+            Grid.Column="0"
+            IsVisible="{Binding IsUsernamePasswordSelected}"
+            Text="Username:" />
+        <TextBox
+            Grid.Row="8"
+            Grid.Column="1"
+            IsVisible="{Binding IsUsernamePasswordSelected}"
+            PlaceholderText="Enter username"
+            Text="{Binding AuthUsername, Mode=TwoWay}" />
 
-        <!-- Auth Password (Conditionally Visible) -->
-        <TextBlock Grid.Row="9" Grid.Column="0" Text="Password:" IsVisible="{Binding IsUsernamePasswordSelected}"/>
-        <TextBox Grid.Row="9" Grid.Column="1"
-                     Text="{Binding AuthPassword, Mode=TwoWay}"
-                     PlaceholderText="Enter password" PasswordChar="*"
-                     IsVisible="{Binding IsUsernamePasswordSelected}"/>
+        <!--  Auth Password (Conditionally Visible)  -->
+        <TextBlock
+            Grid.Row="9"
+            Grid.Column="0"
+            IsVisible="{Binding IsUsernamePasswordSelected}"
+            Text="Password:" />
+        <TextBox
+            Grid.Row="9"
+            Grid.Column="1"
+            IsVisible="{Binding IsUsernamePasswordSelected}"
+            PasswordChar="*"
+            PlaceholderText="Enter password"
+            Text="{Binding AuthPassword, Mode=TwoWay}" />
 
-        <!-- Enhanced Authentication Header -->
-        <TextBlock Grid.Row="10" Grid.Column="0" Grid.ColumnSpan="2" Text="Enhanced Authentication" FontWeight="Bold" FontSize="14" Margin="0,16,0,8" IsVisible="{Binding IsEnhancedAuthSelected}"/>
+        <!--  Enhanced Authentication Header  -->
+        <TextBlock
+            Grid.Row="10"
+            Grid.Column="0"
+            Grid.ColumnSpan="2"
+            Margin="0,16,0,8"
+            FontSize="14"
+            FontWeight="Bold"
+            IsVisible="{Binding IsEnhancedAuthSelected}"
+            Text="Enhanced Authentication" />
 
-        <!-- Authentication Method -->
-        <TextBlock Grid.Row="11" Grid.Column="0" Text="Auth Method:" IsVisible="{Binding IsEnhancedAuthSelected}"/>
-        <TextBox Grid.Row="11" Grid.Column="1" Text="{Binding AuthenticationMethod, Mode=TwoWay}" PlaceholderText="e.g., 'K8S-SAT'" IsVisible="{Binding IsEnhancedAuthSelected}"/>
+        <!--  Authentication Method  -->
+        <TextBlock
+            Grid.Row="11"
+            Grid.Column="0"
+            IsVisible="{Binding IsEnhancedAuthSelected}"
+            Text="Auth Method:" />
+        <TextBox
+            Grid.Row="11"
+            Grid.Column="1"
+            IsVisible="{Binding IsEnhancedAuthSelected}"
+            PlaceholderText="e.g., 'K8S-SAT'"
+            Text="{Binding AuthenticationMethod, Mode=TwoWay}" />
 
-        <!-- Authentication Data -->
-        <TextBlock Grid.Row="12" Grid.Column="0" Text="Auth Data:" IsVisible="{Binding IsEnhancedAuthSelected}"/>
+        <!--  Authentication Data  -->
+        <TextBlock
+            Grid.Row="12"
+            Grid.Column="0"
+            IsVisible="{Binding IsEnhancedAuthSelected}"
+            Text="Auth Data:" />
 
         <ScrollViewer
-                    Grid.Row="12"
-                    Grid.Column="1"
-                    IsVisible="{Binding IsEnhancedAuthSelected}"
-                    HorizontalScrollBarVisibility="Visible"
-                    VerticalScrollBarVisibility="Hidden"
-                    MaxHeight="200"
-                    MaxWidth="420">
+            Grid.Row="12"
+            Grid.Column="1"
+            MaxWidth="420"
+            MaxHeight="200"
+            HorizontalScrollBarVisibility="Visible"
+            IsVisible="{Binding IsEnhancedAuthSelected}"
+            VerticalScrollBarVisibility="Hidden">
 
             <TextBox
-                    IsVisible="{Binding IsEnhancedAuthSelected}"
-                    Text="{Binding AuthenticationData, Mode=TwoWay}"
-                    PlaceholderText="e.g., payload of Service Account Token"
-                    AcceptsReturn="True"
-                    TextWrapping="NoWrap"
-                    HorizontalAlignment="Stretch"/>
+                HorizontalAlignment="Stretch"
+                AcceptsReturn="True"
+                IsVisible="{Binding IsEnhancedAuthSelected}"
+                PlaceholderText="e.g., payload of Service Account Token"
+                Text="{Binding AuthenticationData, Mode=TwoWay}"
+                TextWrapping="NoWrap" />
         </ScrollViewer>
     </Grid>
 </UserControl>

@@ -27,10 +27,20 @@ if (-not $broker -or -not $port) {
     exit 1
 }
 
+# Resolve TLS for the Aspire-injected endpoint:
+#   * Honor MQTT_USE_TLS if the AppHost set it (e.g. "false" for plain TCP, "true" for the TLS listener).
+#   * Otherwise default to plain TCP — Aspire's default `mqtt` endpoint points at EMQX's :1883 listener,
+#     and attempting TLS against it produces "Received an unexpected EOF or 0 bytes from the transport stream".
+if ($env:MQTT_USE_TLS) {
+    $useTls = [System.Convert]::ToBoolean($env:MQTT_USE_TLS)
+} else {
+    $useTls = $false
+}
+
 Write-Host "Waiting $DelaySeconds seconds for broker and clients to be ready..."
 Start-Sleep -Seconds $DelaySeconds
 
-Write-Host "Sending test data to $broker`:$port ..."
-& "$scriptDir\SendTestData.ps1" -Broker $broker -BrokerPort ([int]$port)
+Write-Host "Sending test data to $broker`:$port (TLS: $useTls) ..."
+& "$scriptDir\SendTestData.ps1" -Broker $broker -BrokerPort ([int]$port) -UseTls $useTls
 
 Write-Host "Test data sent successfully."

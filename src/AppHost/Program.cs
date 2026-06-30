@@ -65,6 +65,7 @@ builder.AddExecutable("test-data-sender", "pwsh", toolsDir, "-File", "SendTestDa
     .WithReference(mqttEndpoint)
     .WaitFor(mqttBroker)
     .WithEnvironment("MQTT_HOST", mqttEndpoint.Property(EndpointProperty.Host))
-    .WithEnvironment("MQTT_PORT", mqttEndpoint.Property(EndpointProperty.Port));
+    .WithEnvironment("MQTT_PORT", mqttEndpoint.Property(EndpointProperty.Port))
+    .WithEnvironment("MQTT_USE_TLS", "false");
 
 builder.Build().Run();

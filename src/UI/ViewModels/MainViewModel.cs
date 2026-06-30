@@ -30,7 +30,7 @@ using CrowsNestMqtt.Utils; // Added for AppLogger
 using DynamicData; // Added for SourceList and reactive filtering
 using DynamicData.Binding; // Added for Bind()
 using FuzzySharp; // Added for fuzzy search
-using SharpHook.Native; // Added SharpHook Native for KeyCode and ModifierMask
+using SharpHook.Data; // SharpHook 7.x: KeyCode and EventMask live in SharpHook.Data (formerly SharpHook.Native / ModifierMask)
 using SharpHook.Reactive; // Added SharpHook Reactive
 using System.Reactive.Concurrency;
 using System.Linq;
@@ -1128,13 +1128,13 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
         {
             try
             {
-                _globalHook = new SimpleReactiveGlobalHook();
+                _globalHook = new ReactiveGlobalHook();
                 _globalHookSubscription = _globalHook.KeyPressed
                     .Do(e => { })
                     .Where(e =>
                     {
-                        bool ctrl = e.RawEvent.Mask.HasFlag(ModifierMask.LeftCtrl) || e.RawEvent.Mask.HasFlag(ModifierMask.RightCtrl);
-                        bool shift = e.RawEvent.Mask.HasFlag(ModifierMask.LeftShift) || e.RawEvent.Mask.HasFlag(ModifierMask.RightShift);
+                        bool ctrl = e.RawEvent.Mask.HasFlag(EventMask.LeftCtrl) || e.RawEvent.Mask.HasFlag(EventMask.RightCtrl);
+                        bool shift = e.RawEvent.Mask.HasFlag(EventMask.LeftShift) || e.RawEvent.Mask.HasFlag(EventMask.RightShift);
                         bool pKey = e.Data.KeyCode == KeyCode.VcP;
                         bool focused = IsWindowFocused;
                         bool match = focused && ctrl && shift && pKey;
@@ -1154,11 +1154,23 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
                     .Select(_ => Unit.Default)
                     .InvokeCommand(FocusCommandBarCommand);
 
-                _globalHook.RunAsync().Subscribe(
-                    _ => { },
-                    ex => Log.Error(ex, "Error during Global Hook execution (RunAsync OnError)"),
-                    () => Log.Information("Global Hook stopped.")
-                );
+                // SharpHook 7.x: RunAsync now returns a Task instead of IObservable<Unit>.
+                // Observe completion/failure with ContinueWith so the hook lifecycle is still logged.
+                _ = _globalHook.RunAsync().ContinueWith(t =>
+                {
+                    if (t.IsFaulted && t.Exception is { } ex)
+                    {
+                        Log.Error(ex.GetBaseException(), "Error during Global Hook execution (RunAsync faulted).");
+                    }
+                    else if (t.IsCanceled)
+                    {
+                        Log.Information("Global Hook canceled.");
+                    }
+                    else
+                    {
+                        Log.Information("Global Hook stopped.");
+                    }
+                }, TaskScheduler.Default);
                 Log.Information("SharpHook Global Hook RunAsync called.");
             }
             catch (Exception ex)

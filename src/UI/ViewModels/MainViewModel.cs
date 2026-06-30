@@ -30,7 +30,7 @@ using CrowsNestMqtt.Utils; // Added for AppLogger
 using DynamicData; // Added for SourceList and reactive filtering
 using DynamicData.Binding; // Added for Bind()
 using FuzzySharp; // Added for fuzzy search
-using SharpHook.Native; // Added SharpHook Native for KeyCode and ModifierMask
+using SharpHook.Data; // SharpHook 7.x: KeyCode and EventMask live in SharpHook.Data (formerly SharpHook.Native / ModifierMask)
 using SharpHook.Reactive; // Added SharpHook Reactive
 using System.Reactive.Concurrency;
 using System.Linq;
@@ -1048,7 +1048,9 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
             DefaultTopicBufferSizeBytes = Settings.Into().DefaultTopicBufferSizeBytes,
             AuthMode = Settings.Into().AuthMode,
             UseTls = Settings.UseTls,
-            SubscriptionQoS = Settings.SubscriptionQoS
+            SubscriptionQoS = Settings.SubscriptionQoS,
+            Transport = Settings.SelectedTransport,
+            WebSocketPath = Settings.WebSocketPath
         });
 
         _mqttService.ConnectionStateChanged += OnConnectionStateChanged;
@@ -1126,13 +1128,13 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
         {
             try
             {
-                _globalHook = new SimpleReactiveGlobalHook();
+                _globalHook = new ReactiveGlobalHook();
                 _globalHookSubscription = _globalHook.KeyPressed
                     .Do(e => { })
                     .Where(e =>
                     {
-                        bool ctrl = e.RawEvent.Mask.HasFlag(ModifierMask.LeftCtrl) || e.RawEvent.Mask.HasFlag(ModifierMask.RightCtrl);
-                        bool shift = e.RawEvent.Mask.HasFlag(ModifierMask.LeftShift) || e.RawEvent.Mask.HasFlag(ModifierMask.RightShift);
+                        bool ctrl = e.RawEvent.Mask.HasFlag(EventMask.LeftCtrl) || e.RawEvent.Mask.HasFlag(EventMask.RightCtrl);
+                        bool shift = e.RawEvent.Mask.HasFlag(EventMask.LeftShift) || e.RawEvent.Mask.HasFlag(EventMask.RightShift);
                         bool pKey = e.Data.KeyCode == KeyCode.VcP;
                         bool focused = IsWindowFocused;
                         bool match = focused && ctrl && shift && pKey;
@@ -1152,11 +1154,23 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
                     .Select(_ => Unit.Default)
                     .InvokeCommand(FocusCommandBarCommand);
 
-                _globalHook.RunAsync().Subscribe(
-                    _ => { },
-                    ex => Log.Error(ex, "Error during Global Hook execution (RunAsync OnError)"),
-                    () => Log.Information("Global Hook stopped.")
-                );
+                // SharpHook 7.x: RunAsync now returns a Task instead of IObservable<Unit>.
+                // Observe completion/failure with ContinueWith so the hook lifecycle is still logged.
+                _ = _globalHook.RunAsync().ContinueWith(t =>
+                {
+                    if (t.IsFaulted && t.Exception is { } ex)
+                    {
+                        Log.Error(ex.GetBaseException(), "Error during Global Hook execution (RunAsync faulted).");
+                    }
+                    else if (t.IsCanceled)
+                    {
+                        Log.Information("Global Hook canceled.");
+                    }
+                    else
+                    {
+                        Log.Information("Global Hook stopped.");
+                    }
+                }, TaskScheduler.Default);
                 Log.Information("SharpHook Global Hook RunAsync called.");
             }
             catch (Exception ex)
@@ -2466,7 +2480,9 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
             DefaultTopicBufferSizeBytes = Settings.Into().DefaultTopicBufferSizeBytes,
             AuthMode = Settings.Into().AuthMode,
             UseTls = Settings.UseTls,
-            SubscriptionQoS = Settings.SubscriptionQoS
+            SubscriptionQoS = Settings.SubscriptionQoS,
+            Transport = Settings.SelectedTransport,
+            WebSocketPath = Settings.WebSocketPath
         };
         
         _mqttService.UpdateSettings(connectionSettings);
@@ -3265,13 +3281,48 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
         }
         else if (command.Arguments.Count == 1)
         {
-            // :connect server:port
+            // :connect server:port or :connect ws://server:port/path or :connect wss://server:port/path
+            var arg = command.Arguments[0];
+
+            // Check for WebSocket URI scheme
+            if (arg.StartsWith("ws://", StringComparison.OrdinalIgnoreCase) ||
+                arg.StartsWith("wss://", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var uri = new Uri(arg);
+                    var scheme = uri.Scheme.ToLowerInvariant();
+                    Settings.Hostname = uri.Host;
+                    Settings.Port = uri.Port > 0 ? uri.Port : (scheme == "wss" ? 443 : 80);
+                    Settings.SelectedTransport = BusinessLogic.Configuration.TransportProtocol.WebSocket;
+                    Settings.UseTls = scheme == "wss";
+                    Settings.WebSocketPath = uri.AbsolutePath == "/" ? null : uri.AbsolutePath;
+                }
+                catch (UriFormatException)
+                {
+                    StatusBarText = $"Error: Invalid WebSocket URI '{arg}'. Expected: ws://host:port/path or wss://host:port/path";
+                    Log.Warning("Invalid WebSocket URI for :connect argument: {Argument}", arg);
+                    return;
+                }
+
+                StatusBarText = $"Attempting WebSocket connection to {Settings.Hostname}:{Settings.Port}...";
+                ConnectCommand.Execute().Subscribe(
+                    _ => StatusBarText = $"Successfully initiated WebSocket connection to {Settings.Hostname}:{Settings.Port}.",
+                    ex =>
+                    {
+                        StatusBarText = $"Error initiating connection: {ex.Message}";
+                        Log.Error(ex, "Error executing ConnectCommand");
+                    });
+                return;
+            }
+
+            // :connect server:port (TCP)
             // Parse server:port from first argument (already validated by parser)
-            var parts = command.Arguments[0].Split(':');
+            var parts = arg.Split(':');
             if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || !int.TryParse(parts[1], out int port) || port < 1 || port > 65535)
             {
-                StatusBarText = $"Error: Invalid format for :connect argument '{command.Arguments[0]}'. Expected: <server_address:port>";
-                Log.Warning("Invalid format for :connect argument: {Argument}", command.Arguments[0]);
+                StatusBarText = $"Error: Invalid format for :connect argument '{arg}'. Expected: <server_address:port> or ws://host:port/path";
+                Log.Warning("Invalid format for :connect argument: {Argument}", arg);
                 return;
             }
             string host = parts[0];

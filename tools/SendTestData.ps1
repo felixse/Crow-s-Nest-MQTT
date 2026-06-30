@@ -5,6 +5,7 @@ param(
     [string]$SettingsPath = "$env:LOCALAPPDATA\CrowsNestMqtt\settings.json",
     [string]$Broker = "",
     [int]$BrokerPort = 0,
+    [Nullable[bool]]$UseTls = $null,
     [string]$ImagePath = "",
     [string]$VideoPath = "",
     [string]$JsonPath = "",
@@ -29,17 +30,41 @@ if (-not (Test-Path $nuget)) {
     Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/MQTTnet/5.1.0.1559" -OutFile $nuget
 }
 $extractPath = Join-Path $env:TEMP "MQTTnet_extracted_5.1.0"
-if (-not (Test-Path $extractPath)) {
+$dllPath = Join-Path $extractPath "lib\net8.0\MQTTnet.dll"
+if (-not (Test-Path $dllPath)) {
+    if (Test-Path $extractPath) { Remove-Item $extractPath -Recurse -Force }
     Expand-Archive -Path $nuget -DestinationPath $extractPath -Force
 }
-$dllPath = Join-Path $extractPath "lib\net8.0\MQTTnet.dll"
 Add-Type -Path $dllPath
 
-# Read settings
-$settings = Get-Content $SettingsPath | ConvertFrom-Json
-$mqttHost = if ($Broker) { $Broker } elseif ($settings.Hostname) { $settings.Hostname } else { "localhost" }
-$port = if ($BrokerPort -gt 0) { $BrokerPort } elseif ($settings.Port -and $settings.Port -gt 0) { $settings.Port } else { 1883 }
-$useTls = $settings.UseTls
+# Read settings (optional — file may not exist when running from Aspire/CI)
+$settings = $null
+if (Test-Path -LiteralPath $SettingsPath) {
+    try {
+        $settings = Get-Content -LiteralPath $SettingsPath -Raw | ConvertFrom-Json
+    } catch {
+        Write-Warning "Failed to parse settings file '$SettingsPath': $($_.Exception.Message). Continuing without it."
+    }
+}
+
+$mqttHost = if ($Broker) { $Broker } elseif ($settings -and $settings.Hostname) { $settings.Hostname } else { "localhost" }
+$port = if ($BrokerPort -gt 0) { $BrokerPort } elseif ($settings -and $settings.Port -and $settings.Port -gt 0) { $settings.Port } else { 1883 }
+
+# Resolve TLS in this order:
+#   1) explicit -UseTls parameter
+#   2) MQTT_USE_TLS environment variable (set by Aspire AppHost, e.g. "false")
+#   3) settings.UseTls from settings.json
+#   4) default $false (Aspire's EMQX plain-TCP listener doesn't speak TLS)
+if ($null -ne $UseTls) {
+    $useTls = [bool]$UseTls
+} elseif ($env:MQTT_USE_TLS) {
+    $useTls = [System.Convert]::ToBoolean($env:MQTT_USE_TLS)
+} elseif ($settings -and $null -ne $settings.UseTls) {
+    $useTls = [bool]$settings.UseTls
+} else {
+    $useTls = $false
+}
+
 $clientId = "pwsh-mqtt-$(Get-Random)"
 $publishTimeout = [TimeSpan]::FromSeconds(30)
 
@@ -80,7 +105,7 @@ function Send-MqttMessage {
 }
 
 # Connect
-Write-Host "Connecting to $mqttHost : $port with client id $clientId"
+Write-Host "Connecting to $mqttHost : $port with client id $clientId (TLS: $useTls)"
 $null = $client.ConnectAsync($options).WaitAsync($publishTimeout).GetAwaiter().GetResult()
 
 # Read image as bytes

@@ -145,4 +145,50 @@ public class SettingsViewModelTests
         var vm = new SettingsViewModel { SubscriptionQoS = input };
         Assert.Equal(expected, vm.SubscriptionQoS);
     }
+
+    [Fact]
+    public void Into_SettingsData_HasCorrectTransport()
+    {
+        var vm = new SettingsViewModel();
+        vm.SelectedTransport = TransportProtocol.WebSocket;
+        vm.WebSocketPath = "/mqtt";
+        var settingsData = vm.Into();
+        Assert.Equal(TransportProtocol.WebSocket, settingsData.Transport);
+        Assert.Equal("/mqtt", settingsData.WebSocketPath);
+    }
+
+    [Fact]
+    public void From_SettingsData_SetsTransport()
+    {
+        var settingsData = new SettingsData("host", 8083, Transport: TransportProtocol.WebSocket, WebSocketPath: "/ws");
+        var vm = new SettingsViewModel();
+        vm.From(settingsData);
+        Assert.Equal(TransportProtocol.WebSocket, vm.SelectedTransport);
+        Assert.Equal("/ws", vm.WebSocketPath);
+        Assert.True(vm.IsWebSocketSelected);
+    }
+
+    [Fact]
+    public void SettingsData_Transport_DefaultsToTcp()
+    {
+        var data = new SettingsData("host", 1883);
+        Assert.Equal(TransportProtocol.Tcp, data.Transport);
+        Assert.Null(data.WebSocketPath);
+    }
+
+    [Fact]
+    public void IsWebSocketSelected_IsFalse_WhenTransportIsTcp()
+    {
+        var vm = new SettingsViewModel();
+        vm.SelectedTransport = TransportProtocol.Tcp;
+        Assert.False(vm.IsWebSocketSelected);
+    }
+
+    [Fact]
+    public void IsWebSocketSelected_IsTrue_WhenTransportIsWebSocket()
+    {
+        var vm = new SettingsViewModel();
+        vm.SelectedTransport = TransportProtocol.WebSocket;
+        Assert.True(vm.IsWebSocketSelected);
+    }
 }

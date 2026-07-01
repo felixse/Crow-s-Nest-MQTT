@@ -197,11 +197,73 @@ public class DispatchCommandTests : IDisposable
     }
 
     [Fact]
+    public void DispatchCommand_SetAuthMode_Azure_NudgesTooLowKeepAliveAndSessionExpiry()
+    {
+        // Sub-broker-minimum keep-alive / session-expiry values are a common
+        // trap for Azure Event Grid users. The dispatcher must bump them to
+        // safe defaults so the connection doesn't loop on KeepAliveTimeout /
+        // session-expired failures.
+        _viewModel.Settings.KeepAliveIntervalSeconds = 1;
+        _viewModel.Settings.SessionExpiryIntervalSeconds = 1;
+
+        Dispatch(CommandType.SetAuthMode, "azure");
+
+        Assert.True(_viewModel.Settings.KeepAliveIntervalSeconds >= 30);
+        Assert.True(_viewModel.Settings.SessionExpiryIntervalSeconds >= 300);
+    }
+
+    [Fact]
+    public void DispatchCommand_SetAuthMode_Azure_KeepsAlreadySafeTimingValues()
+    {
+        // If the user already picked reasonable values, respect them.
+        _viewModel.Settings.KeepAliveIntervalSeconds = 90;
+        _viewModel.Settings.SessionExpiryIntervalSeconds = 7200;
+
+        Dispatch(CommandType.SetAuthMode, "azure");
+
+        Assert.Equal(90, _viewModel.Settings.KeepAliveIntervalSeconds);
+        Assert.Equal(7200u, _viewModel.Settings.SessionExpiryIntervalSeconds);
+    }
+
+    [Fact]
     public void DispatchCommand_SetAuthScope_ShouldSetScope()
     {
         Dispatch(CommandType.SetAuthScope, "api://my-app/.default");
         Assert.Equal("api://my-app/.default", _viewModel.Settings.AuthenticationScope);
         Assert.Contains("api://my-app/.default", _viewModel.StatusBarText);
+    }
+
+    [Fact]
+    public void DispatchCommand_SetClientId_WithArg_ShouldSetClientId()
+    {
+        Dispatch(CommandType.SetClientId, "alkopke-dev");
+        Assert.Equal("alkopke-dev", _viewModel.Settings.ClientId);
+        Assert.Contains("alkopke-dev", _viewModel.StatusBarText);
+    }
+
+    [Fact]
+    public void DispatchCommand_SetClientId_NoArgs_ShouldClearClientId()
+    {
+        _viewModel.Settings.ClientId = "previous-value";
+        Dispatch(CommandType.SetClientId);
+        Assert.Null(_viewModel.Settings.ClientId);
+        Assert.Contains("cleared", _viewModel.StatusBarText, System.StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DispatchCommand_SetSubscriptionTopic_WithArg_ShouldSetTopic()
+    {
+        Dispatch(CommandType.SetSubscriptionTopic, "sensors/#");
+        Assert.Equal("sensors/#", _viewModel.Settings.SubscriptionTopic);
+        Assert.Contains("sensors/#", _viewModel.StatusBarText, System.StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DispatchCommand_SetSubscriptionTopic_NoArgs_ShouldResetToHash()
+    {
+        _viewModel.Settings.SubscriptionTopic = "sensors/#";
+        Dispatch(CommandType.SetSubscriptionTopic);
+        Assert.Equal("#", _viewModel.Settings.SubscriptionTopic);
     }
 
     [Fact]
@@ -224,6 +286,28 @@ public class DispatchCommandTests : IDisposable
         Dispatch(CommandType.SetAuthMethod, "SCRAM-SHA-1");
         Assert.Equal("SCRAM-SHA-1", _viewModel.Settings.AuthenticationMethod);
         Assert.Contains("SCRAM-SHA-1", _viewModel.StatusBarText);
+    }
+
+    [Theory]
+    [InlineData("anonymous")]
+    [InlineData("userpass")]
+    [InlineData("enhanced")]
+    [InlineData("azure")]
+    [InlineData("Azure")] // case-insensitive
+    public void DispatchCommand_SetAuthMethod_WithAuthModeName_ShouldRedirectUser(string modeName)
+    {
+        // Regression: users frequently pick :setauthmethod from the alphabetically
+        // sorted command palette when they meant :setauthmode. Rather than
+        // silently writing an auth-mode name into the (mostly unused) enhanced-auth
+        // method field, the dispatcher must reject the input and point the user
+        // at the correct command.
+        var previousMethod = _viewModel.Settings.AuthenticationMethod;
+        Dispatch(CommandType.SetAuthMethod, modeName);
+
+        // AuthenticationMethod must NOT be mutated by this rejected call.
+        Assert.Equal(previousMethod, _viewModel.Settings.AuthenticationMethod);
+        Assert.Contains("Did you mean ':setauthmode", _viewModel.StatusBarText, StringComparison.Ordinal);
+        Assert.Contains(modeName.ToLowerInvariant(), _viewModel.StatusBarText, StringComparison.Ordinal);
     }
 
     [Fact]

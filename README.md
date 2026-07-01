@@ -200,9 +200,12 @@ Crow's Nest MQTT provides a command interface (likely accessible via a dedicated
 *   `:setuser <username>` - Set the username for MQTT authentication.
 *   `:setpass <password>` - Set the password for MQTT authentication.
 *   `:setauthmode <anonymous|userpass|enhanced|azure>` - Set the authentication mode. Use `azure` to connect to Azure Event Grid namespaces with Entra ID tokens via `DefaultAzureCredential`.
-*   `:setauthmethod <method>` - Set the authentication method for enhanced authentication (e.g., `SCRAM-SHA-1`, `K8S-SAT`).
+*   `:setauthmethod <method>` - Set the *enhanced-auth* method name (e.g., `SCRAM-SHA-1`, `K8S-SAT`). Applied only when the auth mode is `enhanced`. **Note:** this is distinct from `:setauthmode`; passing `anonymous`/`userpass`/`enhanced`/`azure` here is rejected because it's a common typo caused by the palette autocomplete.
 *   `:setauthdata <data>` - Set the authentication data for enhanced authentication (method-specific data).
 *   `:setauthscope <scope>` - Set the OAuth scope requested when Azure authentication mode is active. Defaults to `https://eventgrid.azure.net/.default`.
+*   `:setclientid [<client-id>]` - Set the MQTT Client ID (required for Azure Event Grid, must match a registered Client resource on the namespace). Omit the argument to clear.
+*   `:setsubscription [<topic-filter>]` - Set the MQTT topic filter for the client's initial subscription. Defaults to `#`. Azure Event Grid rejects `#`; use a filter that matches your Topic Space template (e.g. `sensors/#`). Omit the argument to reset to `#`.
+*   `:azurewhoami` - Print the identity (`upn`, `oid`, `name`, `appid`, `tenant`) that `DefaultAzureCredential` will use for Azure Event Grid. Use the values it prints to configure the `authenticationName` on the Event Grid Client resource.
 *   `:setusetls <true|false>` - Set whether to use TLS for the MQTT connection. When set to `true`, the client will connect using TLS, allow untrusted certificates, and ignore certificate errors.
 *   `:publish [topic] [@file|text]` - Open the publish window. Optionally pre-fill the topic (defaults to the selected topic) and payload from a file (`@path/to/file`) or inline text. The publish window is non-modal and supports all MQTT V5 properties.
 *   `[search_term]` - Any text entered without a `:` prefix is treated as a search term to filter messages.
@@ -314,6 +317,94 @@ The tests spawn the mock broker as a child process, connect a real MQTTnet v5
 client with OAUTH2-JWT, and assert that: (1) valid tokens are accepted, (2)
 CONNECTs without an `OAUTH2-JWT` method are rejected, and (3) client-initiated
 MQTT v5 `AUTH` re-authentication packets are received by the broker.
+
+### Troubleshooting Azure Event Grid connections
+
+If your `Azure` auth-mode connection is stuck in a reconnect loop with
+`NotAuthorized` in the status bar, work through these three checks in order —
+they cover the vast majority of setup issues.
+
+**1. Hostname must be the MQTT topic-space FQDN, not the HTTP Data Plane URL.**
+
+| ❌ Wrong (HTTP Data Plane) | ✅ Correct (MQTT topic space) |
+|---|---|
+| `https://mynamespace.northeurope-1.eventgrid.azure.net/api/events` | `mynamespace.northeurope-1.ts.eventgrid.azure.net` |
+
+The Azure portal shows both URLs in different blades. For MQTT you need the one
+with the **`.ts.`** infix, no scheme, and no path. The client auto-corrects
+common mistakes: pasting the HTTP URL strips `https://` / `/api/events` and
+rewrites the suffix on the fly, showing a status-bar note when it does.
+
+**2. Client ID must match a registered client on the namespace.**
+
+Azure Event Grid's MQTT broker maps the CONNECT packet's `Client ID` field to
+one of its Client resources (or a Client Authentication Name attribute rule).
+An empty / auto-generated GUID will be rejected. Set the Client ID via the
+settings pane or `:setclientid <name>` to the `name` of your Event Grid client
+resource, or to a value that matches your attribute rule.
+
+To figure out **which identity** to register the client for, run:
+
+```
+:azurewhoami
+```
+
+That command decodes the token `DefaultAzureCredential` would use and prints
+its `upn`, `oid`, `name`, `appid`, and `tenant` claims. Register an Event Grid
+Client whose **Client authentication name** matches your `oid` (Object ID is
+the most stable choice) or `upn`, then set the MQTT Client ID field to that
+client's `name`:
+
+```powershell
+$myOid = az ad signed-in-user show --query id -o tsv
+az eventgrid namespace client create `
+  --resource-group <rg> `
+  --namespace-name <namespace> `
+  --client-name my-cli-user `
+  --authentication-name $myOid `
+  --state Enabled
+```
+
+Then in Crow's Nest: `:setclientid my-cli-user`.
+
+**3. The signed-in identity needs an Event Grid RBAC role.**
+
+`DefaultAzureCredential` gets a token for whoever is signed in via `az login`,
+Visual Studio, managed identity, or an `AZURE_CLIENT_ID`+`AZURE_CLIENT_SECRET`
+env-var pair. That identity must have one of these roles on the namespace or
+topic-space:
+
+- `EventGrid TopicSpaces Publisher`
+- `EventGrid TopicSpaces Subscriber`
+
+Assign the role via `az role assignment create` or the portal's IAM blade. See
+the [Event Grid MQTT client auth docs](https://learn.microsoft.com/azure/event-grid/mqtt-client-authentication)
+for details.
+
+**4. Subscription filter must fit inside your Topic Space template.**
+
+After a successful CONNECT the client fires a single SUBSCRIBE. The default
+filter is `#` (all topics), which is what open brokers like EMQX or Mosquitto
+accept. **Azure Event Grid always rejects `#`** — the SUBACK carries
+`NotAuthorized` — because the filter has to be matched by a Permission Binding
+whose Topic Space template covers it. Set a narrower filter that fits your
+namespace's Topic Space:
+
+```
+:setsubscription sensors/#
+```
+
+or a specific topic template like `devices/+/telemetry`. Then reconnect. The
+subscription topic is also visible in the settings pane ("Subscription Topic")
+and is persisted to `settings.json`.
+
+**Other gotchas**
+
+- `Keep Alive` below ~30 seconds is rejected; the client bumps it to 30
+  automatically when you switch to Azure mode.
+- `Session Expiry` below 5 minutes with `Clean Session=true` causes the session
+  to expire before the first reconnect; the client bumps it to 3600 automatically.
+- `Use TLS` **must** be checked; Event Grid only accepts TLS on port 8883.
 
 ## dotnet Aspire
 

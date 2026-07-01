@@ -63,6 +63,12 @@ public enum CommandType
     GotoResponse,
     /// <summary> Publish a message to a topic. </summary>
     Publish,
+    /// <summary> Set the MQTT client identifier. </summary>
+    SetClientId,
+    /// <summary> Set the MQTT topic filter used for the client's initial subscription. </summary>
+    SetSubscriptionTopic,
+    /// <summary> Print the identity that will be used for Azure authentication. </summary>
+    AzureWhoAmI,
     /// <summary> Represents an unrecognized or invalid command. </summary>
     Unknown
 }

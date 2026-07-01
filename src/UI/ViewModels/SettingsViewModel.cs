@@ -2,6 +2,7 @@ namespace CrowsNestMqtt.UI.ViewModels;
 
 using CrowsNestMqtt.BusinessLogic.Exporter;
 using CrowsNestMqtt.BusinessLogic.Configuration;
+using CrowsNestMqtt.BusinessLogic.Services;
 using ReactiveUI;
 using CrowsNestMqtt.Utils; // For AppLogger
 using System;
@@ -123,6 +124,21 @@ public class SettingsViewModel : ReactiveObject
         set => this.RaiseAndSetIfChanged(ref _subscriptionQoS, Math.Clamp(value, 0, 2));
     }
 
+    private string _subscriptionTopic = "#";
+    /// <summary>
+    /// MQTT topic filter used for the initial subscription. Defaults to <c>#</c>
+    /// (all topics), which works for permissive brokers like EMQX/Mosquitto.
+    /// Azure Event Grid namespaces reject <c>#</c> — set this to a filter that
+    /// matches your Topic Space template (e.g. <c>sensors/#</c>).
+    /// </summary>
+    public string SubscriptionTopic
+    {
+        get => _subscriptionTopic;
+        set => this.RaiseAndSetIfChanged(
+            ref _subscriptionTopic,
+            string.IsNullOrWhiteSpace(value) ? "#" : value);
+    }
+
     public SettingsViewModel(EnvironmentSettingsOverrides? environmentOverrides = null)
     {
         ExportPath = _exportFolderPath; // Set default before loading
@@ -170,13 +186,15 @@ public class SettingsViewModel : ReactiveObject
             this.WhenAnyValue(x => x.SubscriptionQoS),
             (_, _, _, _, _, _, _, _, _, _, _, _, _, _, _) => Unit.Default);
 
-        // Observable for transport-related property changes (and Azure scope, kept here
-        // because the simplePropertiesChanged CombineLatest already hit its 15-arg cap)
+        // Observable for transport-related property changes (and Azure scope /
+        // subscription topic, kept here because the simplePropertiesChanged
+        // CombineLatest already hit its 15-arg cap)
         var transportPropertiesChanged = Observable.CombineLatest(
             this.WhenAnyValue(x => x.SelectedTransport),
             this.WhenAnyValue(x => x.WebSocketPath),
             this.WhenAnyValue(x => x.AuthenticationScope),
-            (_, _, _) => Unit.Default);
+            this.WhenAnyValue(x => x.SubscriptionTopic),
+            (_, _, _, _) => Unit.Default);
 
         // Observable for changes within the TopicSpecificLimits collection (add/remove)
         var collectionChanged = Observable.FromEventPattern<System.Collections.Specialized.NotifyCollectionChangedEventHandler, System.Collections.Specialized.NotifyCollectionChangedEventArgs>(
@@ -241,11 +259,57 @@ public class SettingsViewModel : ReactiveObject
             new ObservableCollection<TransportProtocol>(Enum.GetValues(typeof(TransportProtocol)).Cast<TransportProtocol>()));
     }
 
+    /// <summary>
+    /// Fired when the hostname setter normalizes user input in a non-trivial
+    /// way (e.g. strips a scheme, extracts a port, rewrites the Event Grid
+    /// suffix). Consumers surface the notes to the user via the status bar.
+    /// The event is not raised during load-from-file / env-override phases.
+    /// </summary>
+    public event EventHandler<HostnameNormalizedEventArgs>? HostnameNormalized;
+
     private string _hostname = "localhost";
     public string Hostname
     {
         get => _hostname;
-        set => this.RaiseAndSetIfChanged(ref _hostname, value);
+        set
+        {
+            // Coerce URL-shaped inputs (https://…/api/events), extract inline
+            // ports, and rewrite the Event Grid HTTP suffix to the MQTT topic-
+            // space suffix. This runs every time the property is assigned —
+            // including when the user types into the textbox — so the value in
+            // the ViewModel (and therefore the bound control) always reflects
+            // what MQTTnet actually needs.
+            var normalized = MqttHostnameNormalizer.Normalize(value);
+
+            var backingChanged = !string.Equals(_hostname, normalized.Hostname, StringComparison.Ordinal);
+            var rawInputDiffered = normalized.WasChanged;
+
+            _hostname = normalized.Hostname;
+
+            // ALWAYS raise PropertyChanged when the raw user input differed from
+            // the normalized result, even if the backing field didn't actually
+            // change (e.g. the user pasted the same URL twice). Otherwise the
+            // bound TextBox keeps displaying the raw input because the two-way
+            // binding never sees a source update to overwrite its local buffer.
+            if (backingChanged || rawInputDiffered)
+            {
+                this.RaisePropertyChanged(nameof(Hostname));
+            }
+
+            if (normalized.Port is int extractedPort)
+            {
+                Port = extractedPort;
+            }
+
+            if (!_isLoading && rawInputDiffered)
+            {
+                HostnameNormalized?.Invoke(this, new HostnameNormalizedEventArgs(
+                    original: value ?? string.Empty,
+                    cleaned: normalized.Hostname,
+                    extractedPort: normalized.Port,
+                    notes: normalized.Notes));
+            }
+        }
     }
 
     private int _port = 1883;
@@ -418,7 +482,8 @@ public class SettingsViewModel : ReactiveObject
             UseTls,
             SubscriptionQoS: SubscriptionQoS,
             Transport: SelectedTransport,
-            WebSocketPath: WebSocketPath
+            WebSocketPath: WebSocketPath,
+            SubscriptionTopic: SubscriptionTopic
         )
         {
             TopicSpecificBufferLimits = topicLimits
@@ -445,6 +510,7 @@ public class SettingsViewModel : ReactiveObject
             ExportPath = settingsData.ExportPath;
             UseTls = settingsData.UseTls;
             SubscriptionQoS = settingsData.SubscriptionQoS;
+            SubscriptionTopic = settingsData.SubscriptionTopic;
             SelectedTransport = settingsData.Transport;
             WebSocketPath = settingsData.WebSocketPath;
             TopicSpecificLimits.Clear();

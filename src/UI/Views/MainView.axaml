@@ -138,28 +138,38 @@
               </PathIcon>
               <TextBlock Text="{Binding IsPaused, StringFormat='Paused: {0}'}" VerticalAlignment="Center" Margin="5,0"/>
               <TextBlock Text="(Filtered)" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Orange" FontStyle="Italic" IsVisible="{Binding IsTopicFilterActive}"/>
-              <!-- Status Bar Text -->
-              <TextBlock Text="{Binding StatusBarText}" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray" FontStyle="Italic"/>
+              <!-- Status Bar Text (selectable + wrappable so long lines like :azurewhoami can be copied) -->
+              <SelectableTextBlock Text="{Binding StatusBarText}"
+                                   VerticalAlignment="Center"
+                                   Margin="10,0,0,0"
+                                   Foreground="Gray"
+                                   FontStyle="Italic"
+                                   TextWrapping="Wrap"
+                                   MaxWidth="900" />
               <!-- Search Status Indicator (FR-022, FR-023, FR-024) -->
-              <TextBlock Text="{Binding SearchStatusViewModel.StatusText}"
+              <SelectableTextBlock Text="{Binding SearchStatusViewModel.StatusText}"
                          VerticalAlignment="Center"
                          Margin="10,0,0,0"
                          Foreground="DodgerBlue"
                          FontStyle="Italic"
                          IsVisible="{Binding SearchStatusViewModel.IsVisible}" />
               <!-- Connection Status Message (for Connecting/Disconnected with error) -->
-              <TextBlock Text="{Binding ConnectionStatusMessage}" 
-                         VerticalAlignment="Center" 
-                         Margin="10,0,0,0" 
-                         Foreground="OrangeRed" 
+              <SelectableTextBlock Text="{Binding ConnectionStatusMessage}"
+                         VerticalAlignment="Center"
+                         Margin="10,0,0,0"
+                         Foreground="OrangeRed"
                          FontStyle="Italic"
+                         TextWrapping="Wrap"
+                         MaxWidth="900"
                          IsVisible="{Binding IsConnecting}" />
               <!-- Connection Error Message (persists when disconnected due to error) -->
-              <TextBlock Text="{Binding ConnectionStatusMessage}" 
-                         VerticalAlignment="Center" 
-                         Margin="10,0,0,0" 
-                         Foreground="Red" 
+              <SelectableTextBlock Text="{Binding ConnectionStatusMessage}"
+                         VerticalAlignment="Center"
+                         Margin="10,0,0,0"
+                         Foreground="Red"
                          FontWeight="SemiBold"
+                         TextWrapping="Wrap"
+                         MaxWidth="900"
                          IsVisible="{Binding HasConnectionError}" />
              </StackPanel>
 
@@ -441,7 +451,7 @@
           </Grid> <!-- End of Main Content Grid -->
 
           <Panel Grid.Row="0" Grid.Column="1" IsVisible="{Binding IsSettingsVisible}" Background="{DynamicResource ApplicationBackgroundBrush}">
-            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="5"> <!-- 25 rows (0-24) for Application Settings (rows 16-17 added for Azure auth) -->
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="5"> <!-- 26 rows (0-25); row 23 added for Subscription Topic -->
                 <Grid.Styles>
                     <Style Selector="TextBlock">
                         <Setter Property="VerticalAlignment" Value="Center"/>
@@ -594,8 +604,15 @@
                     <TextBlock Grid.Row="1" Text="Higher QoS preserves message delivery guarantees but reduces throughput" FontSize="10" Margin="0,2,0,0"/>
                 </Grid>
 
+                <!-- Subscription Topic -->
+                <TextBlock Grid.Row="23" Grid.Column="0" Text="Subscription Topic:"/>
+                <StackPanel Grid.Row="23" Grid.Column="1" Orientation="Vertical" Spacing="2">
+                    <TextBox Text="{Binding Settings.SubscriptionTopic, Mode=TwoWay}" PlaceholderText="#"/>
+                    <TextBlock Text="Wildcard '#' works for open brokers (EMQX/Mosquitto). Azure Event Grid requires a filter that matches your Topic Space template (e.g. 'sensors/#' or 'devices/+/telemetry')." FontSize="10" TextWrapping="Wrap"/>
+                </StackPanel>
+
                 <!-- Topic Buffer Limits List -->
-                <ItemsControl Grid.Row="23" Grid.Column="0" Grid.ColumnSpan="2" ItemsSource="{Binding Settings.TopicSpecificLimits}" Margin="0,0,0,5">
+                <ItemsControl Grid.Row="24" Grid.Column="0" Grid.ColumnSpan="2" ItemsSource="{Binding Settings.TopicSpecificLimits}" Margin="0,0,0,5">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:TopicBufferLimitViewModel}">
                             <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto" Margin="0,2">
@@ -606,9 +623,9 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-                
+
                 <!-- Add New Limit Button -->
-                <Button Grid.Row="24" Grid.Column="0" Grid.ColumnSpan="2" Content="Add New Limit" Command="{Binding Settings.AddTopicLimitCommand}" HorizontalAlignment="Left" Margin="0,5,0,0"/>
+                <Button Grid.Row="25" Grid.Column="0" Grid.ColumnSpan="2" Content="Add New Limit" Command="{Binding Settings.AddTopicLimitCommand}" HorizontalAlignment="Left" Margin="0,5,0,0"/>
 
             </Grid>
         </Panel>

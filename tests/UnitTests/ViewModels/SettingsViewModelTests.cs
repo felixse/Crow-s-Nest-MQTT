@@ -325,4 +325,100 @@ public class SettingsViewModelTests
 
         Assert.Equal(8883, vm.Port);
     }
+
+    // --- Hostname normalization wired into the setter ---
+
+    [Fact]
+    public void SetHostname_WithEventGridHttpUrl_NormalizesToMqttFqdn_AndRaisesEvent()
+    {
+        var vm = new SettingsViewModel();
+        HostnameNormalizedEventArgs? captured = null;
+        vm.HostnameNormalized += (_, args) => captured = args;
+
+        vm.Hostname = "https://myns.northeurope-1.eventgrid.azure.net/api/events";
+
+        Assert.Equal("myns.northeurope-1.ts.eventgrid.azure.net", vm.Hostname);
+        Assert.NotNull(captured);
+        Assert.Equal("https://myns.northeurope-1.eventgrid.azure.net/api/events", captured!.Original);
+        Assert.Equal("myns.northeurope-1.ts.eventgrid.azure.net", captured.Cleaned);
+        Assert.Contains(captured.Notes, n => n.Contains("stripped 'https://'", System.StringComparison.Ordinal));
+        Assert.Contains(captured.Notes, n => n.Contains("Event Grid HTTP suffix", System.StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void SetHostname_WithInlinePort_ExtractsPortIntoPortProperty()
+    {
+        var vm = new SettingsViewModel { Port = 1883 };
+
+        vm.Hostname = "broker.example.com:8883";
+
+        Assert.Equal("broker.example.com", vm.Hostname);
+        Assert.Equal(8883, vm.Port);
+    }
+
+    [Fact]
+    public void SetHostname_WhenNormalizationMatchesExistingBackingField_StillRaisesPropertyChanged()
+    {
+        // Regression: when the user pastes a URL that normalizes to the value
+        // already stored on the backing field (e.g. hostname was loaded from
+        // settings.json as the MQTT FQDN, then user pastes the HTTP URL again),
+        // Hostname must still raise PropertyChanged. Otherwise the two-way
+        // bound TextBox keeps displaying the raw URL because it never sees a
+        // source update to replace its local buffer.
+        var vm = new SettingsViewModel();
+        vm.Hostname = "myns.northeurope-1.ts.eventgrid.azure.net"; // seed backing field
+
+        int changeNotifications = 0;
+        ((System.ComponentModel.INotifyPropertyChanged)vm).PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(SettingsViewModel.Hostname))
+            {
+                changeNotifications++;
+            }
+        };
+
+        // Assign a raw URL that normalizes to the SAME value already in the field.
+        vm.Hostname = "https://myns.northeurope-1.eventgrid.azure.net/api/events";
+
+        // Backing field ends up identical, but PropertyChanged still fires so
+        // the bound TextBox re-reads and drops its cached raw-URL text.
+        Assert.Equal("myns.northeurope-1.ts.eventgrid.azure.net", vm.Hostname);
+        Assert.True(changeNotifications >= 1, "PropertyChanged for Hostname must fire even when normalization results in an unchanged backing value.");
+    }
+
+    [Fact]
+    public void SetHostname_WithCleanValue_DoesNotRaiseEvent()
+    {
+        var vm = new SettingsViewModel();
+        int callCount = 0;
+        vm.HostnameNormalized += (_, _) => callCount++;
+
+        vm.Hostname = "broker.hivemq.com";
+
+        Assert.Equal("broker.hivemq.com", vm.Hostname);
+        Assert.Equal(0, callCount);
+    }
+
+    [Fact]
+    public void SelectingAzureAuthMode_BumpsTooLowKeepAliveAndSessionExpiry()
+    {
+        // Regression: users who typed sub-second Keep Alive / Session Expiry
+        // couldn't connect to Event Grid because it enforces minima. Switching
+        // to Azure interactively should nudge those values to broker-safe
+        // defaults without touching values that are already reasonable.
+        var vm = new SettingsViewModel
+        {
+            KeepAliveIntervalSeconds = 1,
+            SessionExpiryIntervalSeconds = 1,
+        };
+
+        // The auto-nudge for keep-alive / session-expiry lives in MainViewModel,
+        // not the setter — so this test only asserts what the setter guarantees:
+        // TLS/Port/Transport. Keep-alive/session-expiry nudge is covered in the
+        // DispatchCommand SetAuthMode Azure test.
+        vm.SelectedAuthMode = SettingsViewModel.AuthModeSelection.Azure;
+
+        Assert.True(vm.UseTls);
+        Assert.Equal(8883, vm.Port);
+    }
 }

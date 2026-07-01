@@ -331,6 +331,39 @@ public class CommandParserService : ICommandParserService
                 }
                 return CommandResult.Failure("Invalid arguments for :setauthscope. Expected: :setauthscope <scope>");
 
+            case "setclientid":
+                // :setclientid <id>   → set the client id to <id>
+                // :setclientid         → clear the client id (auto-generated)
+                if (arguments.Count == 0)
+                {
+                    return CommandResult.SuccessCommand(new ParsedCommand(CommandType.SetClientId, new List<string>()));
+                }
+                if (arguments.Count == 1)
+                {
+                    return CommandResult.SuccessCommand(new ParsedCommand(CommandType.SetClientId, arguments));
+                }
+                return CommandResult.Failure("Invalid arguments for :setclientid. Expected: :setclientid [<client-id>]");
+
+            case "setsubscription":
+                // :setsubscription <filter>  → subscribe using <filter>
+                // :setsubscription           → reset to '#'
+                if (arguments.Count == 0)
+                {
+                    return CommandResult.SuccessCommand(new ParsedCommand(CommandType.SetSubscriptionTopic, new List<string>()));
+                }
+                if (arguments.Count == 1 && !string.IsNullOrWhiteSpace(arguments[0]))
+                {
+                    return CommandResult.SuccessCommand(new ParsedCommand(CommandType.SetSubscriptionTopic, arguments));
+                }
+                return CommandResult.Failure("Invalid arguments for :setsubscription. Expected: :setsubscription [<topic-filter>]");
+
+            case "azurewhoami":
+                if (arguments.Count == 0)
+                {
+                    return CommandResult.SuccessCommand(new ParsedCommand(CommandType.AzureWhoAmI, new List<string>()));
+                }
+                return CommandResult.Failure("Invalid arguments for :azurewhoami. Expected: :azurewhoami");
+
             case "setusetls":
                 if (arguments.Count == 1)
                 {

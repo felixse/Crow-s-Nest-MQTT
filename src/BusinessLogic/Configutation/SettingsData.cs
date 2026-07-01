@@ -19,7 +19,8 @@ public record SettingsData(
     int TimeoutPeriodSeconds = 5,
     int SubscriptionQoS = 1,
     TransportProtocol Transport = TransportProtocol.Tcp,
-    string? WebSocketPath = null)
+    string? WebSocketPath = null,
+    string SubscriptionTopic = "#")
 {
     public IList<TopicBufferLimit> TopicSpecificBufferLimits { get; init; } = new List<TopicBufferLimit>();
     /// <summary>

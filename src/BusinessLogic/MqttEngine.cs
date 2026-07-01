@@ -147,9 +147,13 @@ private MqttClientOptions? _currentOptions;
     {
         try
         {
+            var topicFilter = string.IsNullOrWhiteSpace(_settings.SubscriptionTopic)
+                ? "#"
+                : _settings.SubscriptionTopic;
+
             var subscribeOptions = new MqttClientSubscribeOptionsBuilder()
                 .WithTopicFilter(f =>
-                    f.WithTopic("#")
+                    f.WithTopic(topicFilter)
                      .WithQualityOfServiceLevel((MqttQualityOfServiceLevel)_settings.SubscriptionQoS)
                      .WithRetainAsPublished(true))
                 .Build();
@@ -160,9 +164,10 @@ private MqttClientOptions? _currentOptions;
             {
                 if (subResult.ResultCode > MqttClientSubscribeResultCode.GrantedQoS2)
                 {
-                    var errorMessage = $"Subscription to '{subResult.TopicFilter.Topic}' failed: {subResult.ResultCode}. Check broker permissions.";
+                    var baseError = $"Subscription to '{subResult.TopicFilter.Topic}' failed: {subResult.ResultCode}. Check broker permissions.";
+                    var errorMessage = DecorateSubscribeErrorForAzure(subResult.ResultCode, subResult.TopicFilter.Topic, baseError);
                     LogMessage?.Invoke(this, $"Failed to subscribe to topic '{subResult.TopicFilter.Topic}'. Result: {subResult.ResultCode}");
-                    
+
                     // Store error message to be included in disconnect event
                     _pendingErrorMessage = errorMessage;
                     
@@ -195,6 +200,29 @@ private MqttClientOptions? _currentOptions;
                 await _client.DisconnectAsync(new MqttClientDisconnectOptionsBuilder().Build(), CancellationToken.None).ConfigureAwait(false);
             }
         }
+    }
+
+    /// <summary>
+    /// When the SUBACK carries <c>NotAuthorized</c> against Azure Event Grid,
+    /// wildcard '#' subscriptions are almost always the cause — the broker only
+    /// accepts filters that fit inside the client's Topic Space template. Append
+    /// a targeted hint so the user knows exactly what to change.
+    /// </summary>
+    private string DecorateSubscribeErrorForAzure(
+        MqttClientSubscribeResultCode resultCode,
+        string topicFilter,
+        string baseMessage)
+    {
+        if (_settings.AuthMode is not AzureAuthenticationMode
+            || resultCode != MqttClientSubscribeResultCode.NotAuthorized)
+        {
+            return baseMessage;
+        }
+
+        return baseMessage
+            + $" Azure Event Grid rejects subscriptions outside your Topic Space template — '{topicFilter}' isn't matched by any permission binding on the namespace."
+            + " Set a narrower filter that matches your topic space (e.g. 'sensors/#' or 'devices/+/telemetry') via ':setsubscription <filter>' or the Subscription Topic setting, then reconnect."
+            + " If you own the namespace, verify that the Topic Space template and Permission Binding cover the filter you want.";
     }
 
     // Builds MqttClientOptions based on current settings.
@@ -1263,6 +1291,11 @@ private Task OnClientConnected(MqttClientConnectedEventArgs args)
         // Stop the token-refresh timer; if we reconnect a fresh token will be fetched.
         DisposeTokenRefreshTimer();
 
+        // Decorate obvious auth failures with Azure-specific troubleshooting.
+        // Only applies when Azure auth mode is active — other setups have their
+        // own diagnostic paths.
+        AppendAzureTroubleshootingHint(e);
+
         // If the disconnect was intentional (user clicked Disconnect/Cancel) or we are disposing,
         // then set the state to Disconnected and do not attempt to reconnect.
         if (_isDisposing || (_connectionCts?.IsCancellationRequested ?? true))
@@ -1297,5 +1330,59 @@ private Task OnClientConnected(MqttClientConnectedEventArgs args)
         _ = Task.Run(() => ReconnectAsync(_connectionCts.Token), _connectionCts.Token);
         
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// When we're running with Azure auth mode and the broker rejects the
+    /// connection with an auth-related reason code, prepend hints to
+    /// <c>_pendingErrorMessage</c> so the UI status bar surfaces something
+    /// actionable rather than the bare "NotAuthorized" the wire protocol carries.
+    /// </summary>
+    private void AppendAzureTroubleshootingHint(MqttClientDisconnectedEventArgs e)
+    {
+        if (_settings.AuthMode is not AzureAuthenticationMode)
+        {
+            return;
+        }
+
+        bool isAuthFailure =
+            e.Reason == MqttClientDisconnectReason.NotAuthorized
+            || e.Reason == MqttClientDisconnectReason.BadAuthenticationMethod
+            || (e.ConnectResult?.ResultCode is MqttClientConnectResultCode.NotAuthorized
+                                             or MqttClientConnectResultCode.BadAuthenticationMethod
+                                             or MqttClientConnectResultCode.BadUserNameOrPassword);
+
+        if (!isAuthFailure)
+        {
+            return;
+        }
+
+        var hostname = _settings.Hostname ?? string.Empty;
+        var hostSuffixOk = hostname.EndsWith(".ts.eventgrid.azure.net", StringComparison.OrdinalIgnoreCase);
+        var clientIdMissing = string.IsNullOrWhiteSpace(_settings.ClientId);
+
+        var hints = new System.Text.StringBuilder();
+        hints.Append("Azure Event Grid rejected the connection. Common causes: ");
+        var separatedHints = new List<string>();
+        if (clientIdMissing)
+        {
+            separatedHints.Add("Client ID is empty (must match a registered client on the namespace or a client-authentication-name attribute)");
+        }
+        if (!hostSuffixOk)
+        {
+            separatedHints.Add($"hostname '{hostname}' doesn't look like an Event Grid MQTT endpoint — expected pattern '<namespace>.<region>-1.ts.eventgrid.azure.net'");
+        }
+        separatedHints.Add("the signed-in identity may lack the 'EventGrid TopicSpaces Publisher/Subscriber' role");
+        separatedHints.Add("the OAuth scope should be 'https://eventgrid.azure.net/.default' (default)");
+        hints.Append(string.Join("; ", separatedHints));
+        hints.Append('.');
+
+        var hint = hints.ToString();
+        LogMessage?.Invoke(this, hint);
+
+        // Preserve existing pending error if any; append the hint on a new line.
+        _pendingErrorMessage = string.IsNullOrEmpty(_pendingErrorMessage)
+            ? hint
+            : _pendingErrorMessage + " " + hint;
     }
 } // End of MqttEngine class

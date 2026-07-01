@@ -119,6 +119,14 @@ Choose the authentication mode:
 - **Enhanced**: For MQTT 5.0 enhanced authentication, specify:
   - **Authentication Method** (e.g., `SCRAM-SHA-1`, `K8S-SAT`)
   - **Authentication Data** (method-specific data)
+- **Azure**: For Azure Event Grid namespace MQTT brokers. Uses
+  `Azure.Identity.DefaultAzureCredential` (env vars → managed identity → Visual
+  Studio → `az login` → interactive browser) to obtain an Entra ID access
+  token. The token is sent via MQTT v5 enhanced authentication using method
+  `OAUTH2-JWT` and is **automatically refreshed before it expires** without
+  reconnecting. Selecting Azure auto-enables TLS, port `8883`, and TCP
+  transport. The default OAuth scope is `https://eventgrid.azure.net/.default`
+  but can be overridden in the **OAuth Scope** field.
 
 **3. Export Options**  
 Control how and where message logs are exported:
@@ -191,9 +199,10 @@ Crow's Nest MQTT provides a command interface (likely accessible via a dedicated
 *   `:settings` - Toggle the visibility of the settings panel.
 *   `:setuser <username>` - Set the username for MQTT authentication.
 *   `:setpass <password>` - Set the password for MQTT authentication.
-*   `:setauthmode <anonymous|userpass|enhanced>` - Set the authentication mode.
+*   `:setauthmode <anonymous|userpass|enhanced|azure>` - Set the authentication mode. Use `azure` to connect to Azure Event Grid namespaces with Entra ID tokens via `DefaultAzureCredential`.
 *   `:setauthmethod <method>` - Set the authentication method for enhanced authentication (e.g., `SCRAM-SHA-1`, `K8S-SAT`).
 *   `:setauthdata <data>` - Set the authentication data for enhanced authentication (method-specific data).
+*   `:setauthscope <scope>` - Set the OAuth scope requested when Azure authentication mode is active. Defaults to `https://eventgrid.azure.net/.default`.
 *   `:setusetls <true|false>` - Set whether to use TLS for the MQTT connection. When set to `true`, the client will connect using TLS, allow untrusted certificates, and ignore certificate errors.
 *   `:publish [topic] [@file|text]` - Open the publish window. Optionally pre-fill the topic (defaults to the selected topic) and payload from a file (`@path/to/file`) or inline text. The publish window is non-modal and supports all MQTT V5 properties.
 *   `[search_term]` - Any text entered without a `:` prefix is treated as a search term to filter messages.
@@ -241,6 +250,71 @@ You can set the authentication mode to `enhanced` using the `:setauthmode` comma
 
 When connecting to a broker with Enhanced Authentication, the client and broker will exchange authentication data until the authentication process is complete.
 
+## Azure Event Grid Namespace (OAUTH2-JWT)
+
+Crow's NestMQTT can connect to **Azure Event Grid namespace** MQTT brokers using Entra ID
+(Microsoft Azure Active Directory) tokens. No certificates or shared keys are required —
+the client uses `Azure.Identity.DefaultAzureCredential` to acquire an access token via
+the standard Azure credential chain (env vars → managed identity → Visual Studio →
+`az login` → interactive browser).
+
+**To connect:**
+
+```
+:setauthmode azure
+:connect mynamespace.eastus-1.ts.eventgrid.azure.net:8883
+```
+
+`:connect` automatically detects Azure Event Grid hostnames (suffix
+`.ts.eventgrid.azure.net`) and switches to Azure auth mode if needed. Selecting Azure
+auth mode also auto-configures TLS, port `8883`, and TCP transport.
+
+**Custom OAuth scope:** the default scope is `https://eventgrid.azure.net/.default`.
+Override with `:setauthscope <scope>` if your tenant requires a different audience.
+
+**Token refresh:** Entra ID tokens expire (typically ~1h). Crow's NestMQTT schedules a
+proactive refresh 5 minutes before expiry and sends a new token via an MQTT v5 `AUTH`
+packet, so long-running sessions stay connected without reconnect.
+
+**Authentication on the client machine:**
+
+| Scenario | Recommended setup |
+|---|---|
+| Local development | `az login` |
+| CI / containers | `AZURE_CLIENT_ID` + `AZURE_TENANT_ID` + `AZURE_CLIENT_SECRET` env vars (workload identity / service principal) |
+| Azure VM / Container App | Use the host's managed identity (no extra config needed) |
+
+### Local development / Aspire testing (no Azure required)
+
+The repository ships a `MockAzureEventGridBroker` project under `tools/` that emulates
+an Event Grid namespace listener locally: it accepts CONNECT packets whose
+`AuthenticationMethod` is `OAUTH2-JWT` and whose `AuthenticationData` is a
+well-formed JWT (signatures are not verified). The bundled Aspire host launches
+this mock broker alongside a fourth Crow's Nest instance (`crows-nest-mqtt-azure`)
+so you can exercise the full Azure code path with `dotnet run --project src/AppHost`
+without deploying to Azure.
+
+To bypass `DefaultAzureCredential` and use a hand-issued JWT, set the
+`CROWSNEST__AZURE_TOKEN_OVERRIDE` environment variable to the token string. When
+present, `AzureAccessTokenProvider` returns the override directly and the JWT's
+`exp` claim drives the refresh timer (fallback: 1 hour). The Aspire host wires
+this automatically for the fourth instance — you do not need to set it manually
+when running the AppHost.
+
+> ⚠️ **Do not set `CROWSNEST__AZURE_TOKEN_OVERRIDE` in production.** It short-circuits
+> Entra ID entirely and will forward whatever token you provide to the broker.
+
+Automated coverage lives in `tests/AppHost.Tests/AzureAuthModeAspireTests.cs`:
+
+```
+dotnet test tests/AppHost.Tests/AppHost.Tests.csproj --configuration Release
+```
+
+The tests spawn the mock broker as a child process, connect a real MQTTnet v5
+client with OAUTH2-JWT, and assert that: (1) valid tokens are accepted, (2)
+CONNECTs without an `OAUTH2-JWT` method are rejected, and (3) client-initiated
+MQTT v5 `AUTH` re-authentication packets are received by the broker.
+
 ## dotnet Aspire
 
 Crow's NestMQTT automatically connects to the MQTT Broker endpoint defined via dotnet Aspire environment variables. It supports both `services__mqtt__mqtt__0` and `services__mqtt__default__0` naming conventions. The endpoint URI scheme determines the transport protocol:
@@ -286,11 +360,12 @@ This is useful for:
 | `CROWSNEST__KEEP_ALIVE_SECONDS` | Keep-alive interval in seconds | int | `30` |
 | `CROWSNEST__CLEAN_SESSION` | Whether to use clean session | bool | `true` |
 | `CROWSNEST__SESSION_EXPIRY_SECONDS` | Session expiry interval | uint | `300` |
-| `CROWSNEST__AUTH_MODE` | Authentication mode | enum | `anonymous`, `userpass`, `enhanced` |
+| `CROWSNEST__AUTH_MODE` | Authentication mode | enum | `anonymous`, `userpass`, `enhanced`, `azure` |
 | `CROWSNEST__AUTH_USERNAME` | Username (when AUTH_MODE=userpass) | string | `myuser` |
 | `CROWSNEST__AUTH_PASSWORD` | Password (when AUTH_MODE=userpass) | string | `mypass` |
 | `CROWSNEST__AUTH_METHOD` | Enhanced auth method (when AUTH_MODE=enhanced) | string | `SCRAM-SHA-1` |
 | `CROWSNEST__AUTH_DATA` | Enhanced auth data (when AUTH_MODE=enhanced) | string | |
+| `CROWSNEST__AUTH_SCOPE` | OAuth scope (when AUTH_MODE=azure) | string | `https://eventgrid.azure.net/.default` |
 | `CROWSNEST__USE_TLS` | Enable TLS encryption | bool | `true` |
 | `CROWSNEST__TRANSPORT` | Transport protocol | enum | `Tcp`, `WebSocket` |
 | `CROWSNEST__WEBSOCKET_PATH` | WebSocket path (when TRANSPORT=WebSocket) | string | `/mqtt` |

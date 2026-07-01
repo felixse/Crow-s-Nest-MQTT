@@ -240,6 +240,8 @@ public class CommandParserServiceTests
     [InlineData(":setauthmode anonymous", "anonymous")]
     [InlineData(":setauthmode userpass", "userpass")]
     [InlineData(":setauthmode enhanced", "enhanced")]
+    [InlineData(":setauthmode azure", "azure")]
+    [InlineData(":setauthmode Azure", "Azure")] // Case is preserved in arguments; parser is case-insensitive
     public void ParseCommand_SetAuthMode_ValidModes_ReturnsSuccess(string input, string expectedMode)
     {
         var result = CommandParserService.ParseCommand(input, _settings);
@@ -265,5 +267,34 @@ public class CommandParserServiceTests
         Assert.Null(result.ParsedCommand);
         Assert.NotNull(result.ErrorMessage);
         Assert.Contains("Invalid arguments for :setauthmode", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // --- Specific Command Logic: SetAuthScope (Azure Event Grid) ---
+    [Theory]
+    [InlineData(":setauthscope https://eventgrid.azure.net/.default", "https://eventgrid.azure.net/.default")]
+    [InlineData(":setauthscope api://custom-scope/.default", "api://custom-scope/.default")]
+    public void ParseCommand_SetAuthScope_ValidScopes_ReturnsSuccess(string input, string expectedScope)
+    {
+        var result = CommandParserService.ParseCommand(input, _settings);
+
+        Assert.True(result.IsSuccess, $"Input '{input}' failed: {result.ErrorMessage}");
+        Assert.NotNull(result.ParsedCommand);
+        Assert.Equal(CommandType.SetAuthScope, result.ParsedCommand.Type);
+        Assert.NotNull(result.ParsedCommand.Arguments);
+        Assert.Single(result.ParsedCommand.Arguments);
+        Assert.Equal(expectedScope, result.ParsedCommand.Arguments[0]);
+    }
+
+    [Theory]
+    [InlineData(":setauthscope")]
+    [InlineData(":setauthscope scope1 scope2")]
+    public void ParseCommand_SetAuthScope_InvalidUsage_ReturnsFailure(string input)
+    {
+        var result = CommandParserService.ParseCommand(input, _settings);
+
+        Assert.False(result.IsSuccess);
+        Assert.Null(result.ParsedCommand);
+        Assert.NotNull(result.ErrorMessage);
+        Assert.Contains("Invalid arguments for :setauthscope", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 }

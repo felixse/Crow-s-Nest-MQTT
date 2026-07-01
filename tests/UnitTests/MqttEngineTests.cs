@@ -1,3 +1,4 @@
+using System;
 using System.Reflection;
 using MQTTnet;
 using MQTTnet.Protocol;
@@ -407,5 +408,56 @@ public class MqttEngineTests
         // Assert
         Assert.NotNull(options);
         Assert.IsType<MqttClientTcpOptions>(options.ChannelOptions);
+    }
+
+    // --- Azure (OAUTH2-JWT) tests ---
+
+    [Fact]
+    public void BuildMqttOptionsCore_WithAzureAuth_SetsOauth2JwtMethodAndToken()
+    {
+        var settings = new MqttConnectionSettings
+        {
+            Hostname = "ns.eastus-1.ts.eventgrid.azure.net",
+            Port = 8883,
+            AuthMode = new AzureAuthenticationMode("https://eventgrid.azure.net/.default"),
+        };
+        using var engine = new MqttEngine(settings);
+
+        var expiry = DateTimeOffset.UtcNow.AddHours(1);
+        var token = new CrowsNestMqtt.BusinessLogic.Services.AccessTokenResult("test-azure-token", expiry);
+
+        var methodInfo = typeof(MqttEngine).GetMethod(
+            "BuildMqttOptionsCore",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+        var options = methodInfo?.Invoke(engine, new object?[] { token }) as MqttClientOptions;
+
+        Assert.NotNull(options);
+        Assert.Equal("OAUTH2-JWT", options.AuthenticationMethod);
+        Assert.Equal("test-azure-token", System.Text.Encoding.UTF8.GetString(options.AuthenticationData));
+        // Azure always uses TLS regardless of the explicit UseTls setting.
+        Assert.NotNull(options.ChannelOptions);
+        var tlsOptions = options.ChannelOptions.TlsOptions;
+        Assert.NotNull(tlsOptions);
+        Assert.True(tlsOptions!.UseTls);
+    }
+
+    [Fact]
+    public void BuildMqttOptionsCore_WithAzureAuth_ThrowsWhenTokenMissing()
+    {
+        var settings = new MqttConnectionSettings
+        {
+            Hostname = "ns.eastus-1.ts.eventgrid.azure.net",
+            Port = 8883,
+            AuthMode = new AzureAuthenticationMode(),
+        };
+        using var engine = new MqttEngine(settings);
+
+        var methodInfo = typeof(MqttEngine).GetMethod(
+            "BuildMqttOptionsCore",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+
+        var ex = Assert.Throws<TargetInvocationException>(
+            () => methodInfo?.Invoke(engine, new object?[] { null }));
+        Assert.IsType<InvalidOperationException>(ex.InnerException);
     }
 }

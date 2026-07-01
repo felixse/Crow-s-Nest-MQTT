@@ -3061,20 +3061,28 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
                         }
                         else if (mode == "enhanced")
                         {
-                            this.Settings.AuthenticationMethod = "Enhanced Authentication";
-                            StatusBarText = "Authentication method set to 'Enhanced Authentication'. Settings will be saved.";
-                            Log.Information("Authentication method set to 'Enhanced Authentication' via command.");
+                            this.Settings.SelectedAuthMode = SettingsViewModel.AuthModeSelection.Enhanced;
+                            StatusBarText = "Authentication mode set to Enhanced. Settings will be saved.";
+                            Log.Information("Authentication mode set to Enhanced via command.");
+                        }
+                        else if (mode == "azure")
+                        {
+                            this.Settings.SelectedAuthMode = SettingsViewModel.AuthModeSelection.Azure;
+                            StatusBarText =
+                                "Authentication mode set to Azure (OAUTH2-JWT via DefaultAzureCredential). "
+                                + "Port 8883, TLS, and TCP transport have been enabled. Settings will be saved.";
+                            Log.Information("Authentication mode set to Azure via command.");
                         }
                         else
                         {
                             // This case should ideally be caught by CommandParserService, but good for robustness
-                            StatusBarText = "Error: Invalid argument for :setauthmode. Expected <anonymous|userpass|enhanced>.";
+                            StatusBarText = "Error: Invalid argument for :setauthmode. Expected <anonymous|userpass|enhanced|azure>.";
                             Log.Warning("Invalid argument for SetAuthMode command: {Argument}", command.Arguments[0]);
                         }
                     }
                     else
                     {
-                        StatusBarText = "Error: :setauthmode requires exactly one argument <anonymous|userpass|enhanced>.";
+                        StatusBarText = "Error: :setauthmode requires exactly one argument <anonymous|userpass|enhanced|azure>.";
                         Log.Warning("Invalid arguments for SetAuthMode command.");
                     }
                     break;
@@ -3120,6 +3128,19 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
                     {
                         StatusBarText = "Error: :setauthdata requires exactly one argument <data>.";
                         Log.Warning("Invalid arguments for SetAuthData command.");
+                    }
+                    break;
+                case CommandType.SetAuthScope:
+                    if (command.Arguments.Count == 1 && !string.IsNullOrWhiteSpace(command.Arguments[0]))
+                    {
+                        this.Settings.AuthenticationScope = command.Arguments[0];
+                        StatusBarText = $"Azure OAuth scope set to '{command.Arguments[0]}'. Settings will be saved.";
+                        Log.Information("Azure OAuth scope set via command: {Scope}", command.Arguments[0]);
+                    }
+                    else
+                    {
+                        StatusBarText = "Error: :setauthscope requires exactly one argument <scope>.";
+                        Log.Warning("Invalid arguments for SetAuthScope command.");
                     }
                     break;
                 case CommandType.SetUseTls:
@@ -3178,9 +3199,10 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
         { "view", (":view <raw|json|image>", "Switches the payload view between raw text, JSON tree and image.") },
         { "setuser", (":setuser <username>", "Sets MQTT username. Switches to Username/Password auth if current mode is Anonymous.") },
         { "setpass", (":setpass <password>", "Sets MQTT password. Switches to Username/Password auth if current mode is Anonymous.") },
-        { "setauthmode", (":setauthmode <anonymous|userpass|enhanced>", "Sets the MQTT authentication mode.") },
+        { "setauthmode", (":setauthmode <anonymous|userpass|enhanced|azure>", "Sets the MQTT authentication mode. 'azure' uses Entra ID (DefaultAzureCredential) to obtain an OAUTH2-JWT token for Azure Event Grid namespaces.") },
         { "setauthmethod", (":setauthmethod <method>", "Sets the authentication method for enhanced authentication (e.g., SCRAM-SHA-1, K8S-SAT).") },
         { "setauthdata", (":setauthdata <data>", "Sets the authentication data for enhanced authentication (method-specific data).") },
+        { "setauthscope", (":setauthscope <scope>", "Sets the OAuth scope requested when Azure authentication mode is active. Defaults to https://eventgrid.azure.net/.default.") },
         { "setusetls", (":setusetls <true|false>", "Sets whether to use TLS for MQTT connections. true = enable TLS, false = disable TLS.") },
         { "deletetopic", (":deletetopic [topic-pattern] [--confirm]", "Deletes retained messages from a topic and its subtopics by publishing empty retained messages. Uses selected topic if no pattern specified.") },
         { "gotoresponse", (":gotoresponse", "Navigates to the response message for the currently selected MQTT v5 request message.") },
@@ -3269,6 +3291,17 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
         if (command.Arguments.Count == 0)
         {
             // :connect (use all from settings)
+            // If the saved hostname is an Event Grid namespace but auth mode isn't yet
+            // Azure, auto-switch so the connection actually works.
+            if (IsAzureEventGridHost(Settings.Hostname)
+                && Settings.SelectedAuthMode != SettingsViewModel.AuthModeSelection.Azure)
+            {
+                Settings.SelectedAuthMode = SettingsViewModel.AuthModeSelection.Azure;
+                Log.Information(
+                    "Detected Azure Event Grid host '{Host}' in settings; switching to Azure auth mode.",
+                    Settings.Hostname);
+            }
+
             StatusBarText = $"Attempting to connect to {Settings.Hostname}:{Settings.Port}...";
             ConnectCommand.Execute().Subscribe(
                 _ => StatusBarText = $"Successfully initiated connection to {Settings.Hostname}:{Settings.Port}.",
@@ -3331,6 +3364,21 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
             Settings.Hostname = host;
             Settings.Port = port;
 
+            // Azure Event Grid namespace MQTT hostnames end with .ts.eventgrid.azure.net.
+            // Auto-switch to Azure auth mode so the user doesn't need to run
+            // :setauthmode azure / :setusetls true separately.
+            if (IsAzureEventGridHost(host))
+            {
+                if (Settings.SelectedAuthMode != SettingsViewModel.AuthModeSelection.Azure)
+                {
+                    Settings.SelectedAuthMode = SettingsViewModel.AuthModeSelection.Azure;
+                    Log.Information("Detected Azure Event Grid host '{Host}'; switching to Azure auth mode.", host);
+                }
+                // SelectedAuthMode.Azure setter already forces UseTls=true, Port=8883, Transport=Tcp.
+                // Restore the user-supplied port if they explicitly specified one other than 8883.
+                Settings.Port = port;
+            }
+
             StatusBarText = $"Attempting to connect to {host}:{port}...";
             ConnectCommand.Execute().Subscribe(
                 _ => StatusBarText = $"Successfully initiated connection to {host}:{port}.",
@@ -3348,6 +3396,19 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
             Log.Warning("Invalid argument count for :connect command: {Count}", command.Arguments.Count);
             return;
         }
+    }
+
+    /// <summary>
+    /// Returns true when <paramref name="host"/> looks like an Azure Event Grid namespace
+    /// MQTT broker (matches the well-known suffix <c>.ts.eventgrid.azure.net</c>).
+    /// </summary>
+    internal static bool IsAzureEventGridHost(string? host)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return false;
+        }
+        return host.EndsWith(".ts.eventgrid.azure.net", StringComparison.OrdinalIgnoreCase);
     }
 
     private void Export(ParsedCommand command)

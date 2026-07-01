@@ -43,7 +43,7 @@ namespace CrowsNestMqtt.UnitTests.Services
             // Assert
             Assert.False(result.IsSuccess);
             Assert.Null(result.ParsedCommand);
-            Assert.Equal("Invalid arguments for :setauthmode. Expected: :setauthmode <anonymous|userpass|enhanced>", result.ErrorMessage);
+            Assert.Equal("Invalid arguments for :setauthmode. Expected: :setauthmode <anonymous|userpass|enhanced|azure>", result.ErrorMessage);
         }
 
         [Fact]
@@ -58,7 +58,7 @@ namespace CrowsNestMqtt.UnitTests.Services
             // Assert
             Assert.False(result.IsSuccess);
             Assert.Null(result.ParsedCommand);
-            Assert.Equal("Invalid arguments for :setauthmode. Expected: :setauthmode <anonymous|userpass|enhanced>", result.ErrorMessage);
+            Assert.Equal("Invalid arguments for :setauthmode. Expected: :setauthmode <anonymous|userpass|enhanced|azure>", result.ErrorMessage);
         }
 
         // Tests for :setuser

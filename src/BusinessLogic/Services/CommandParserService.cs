@@ -303,12 +303,12 @@ public class CommandParserService : ICommandParserService
                 if (arguments.Count == 1)
                 {
                     string mode = arguments[0].ToLowerInvariant();
-                    if (mode == "anonymous" || mode == "userpass" || mode == "enhanced")
+                    if (mode == "anonymous" || mode == "userpass" || mode == "enhanced" || mode == "azure")
                     {
                         return CommandResult.SuccessCommand(new ParsedCommand(CommandType.SetAuthMode, arguments));
                     }
                 }
-                return CommandResult.Failure("Invalid arguments for :setauthmode. Expected: :setauthmode <anonymous|userpass|enhanced>");
+                return CommandResult.Failure("Invalid arguments for :setauthmode. Expected: :setauthmode <anonymous|userpass|enhanced|azure>");
 
             case "setauthmethod":
                 if (arguments.Count == 1)
@@ -323,6 +323,13 @@ public class CommandParserService : ICommandParserService
                     return CommandResult.SuccessCommand(new ParsedCommand(CommandType.SetAuthData, arguments));
                 }
                 return CommandResult.Failure("Invalid arguments for :setauthdata. Expected: :setauthdata <data>");
+
+            case "setauthscope":
+                if (arguments.Count == 1 && !string.IsNullOrWhiteSpace(arguments[0]))
+                {
+                    return CommandResult.SuccessCommand(new ParsedCommand(CommandType.SetAuthScope, arguments));
+                }
+                return CommandResult.Failure("Invalid arguments for :setauthscope. Expected: :setauthscope <scope>");
 
             case "setusetls":
                 if (arguments.Count == 1)

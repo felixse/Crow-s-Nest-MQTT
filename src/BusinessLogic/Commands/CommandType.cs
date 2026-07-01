@@ -53,6 +53,8 @@ public enum CommandType
     SetAuthMethod,
     /// <summary> Set the MQTT authentication data. </summary>
     SetAuthData,
+    /// <summary> Set the OAuth scope used by Azure authentication mode. </summary>
+    SetAuthScope,
     /// <summary> Set the MQTT TLS usage flag. </summary>
     SetUseTls,
     /// <summary> Delete retained messages from a topic and its subtopics. </summary>

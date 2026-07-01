@@ -48,7 +48,7 @@ public class EnhancedAuthenticationHandlerTests
             handler.Configure();
 
             // Assert
-            Assert.Contains(logMessages, log => log.Contains("Enhanced Authentication: Token is valid until"));
+            Assert.Contains(logMessages, log => log.Contains("Enhanced Authentication (K8S-SAT): Token is valid until"));
         }
         finally
         {
@@ -75,7 +75,7 @@ public class EnhancedAuthenticationHandlerTests
             handler.Configure();
 
             // Assert
-            Assert.Contains(logMessages, log => log.Contains("Enhanced Authentication: Token has expired on"));
+            Assert.Contains(logMessages, log => log.Contains("Enhanced Authentication (K8S-SAT): Token has expired on"));
         }
         finally
         {
@@ -132,6 +132,72 @@ public class EnhancedAuthenticationHandlerTests
         finally
         {
             // Cleanup
+            AppLogger.OnLogMessage -= logHandler;
+        }
+    }
+
+    // --- Azure OAUTH2-JWT tests ---
+
+    /// <summary>
+    /// Minimal <see cref="IAccessTokenProvider"/> stub for tests; returns a canned token
+    /// and increments a call counter so tests can assert it was invoked.
+    /// </summary>
+    private sealed class StubAccessTokenProvider : IAccessTokenProvider
+    {
+        public int CallCount { get; private set; }
+        public string Token { get; set; } = "stub-token";
+        public DateTimeOffset ExpiresOn { get; set; } = DateTimeOffset.UtcNow.AddHours(1);
+
+        public Task<AccessTokenResult> GetTokenAsync(System.Threading.CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            return Task.FromResult(new AccessTokenResult(Token, ExpiresOn));
+        }
+    }
+
+    [Fact]
+    public void Configure_WithAzureMode_AssignsHandlerToOptions()
+    {
+        var validToken = GenerateTestToken(DateTime.UtcNow.AddHours(1));
+        var options = new MqttClientOptions
+        {
+            AuthenticationMethod = "OAUTH2-JWT",
+            AuthenticationData = Encoding.UTF8.GetBytes(validToken),
+        };
+        var provider = new StubAccessTokenProvider();
+        var handler = new EnhancedAuthenticationHandler(options, provider);
+
+        handler.Configure();
+
+        Assert.Same(handler, options.EnhancedAuthenticationHandler);
+    }
+
+    [Fact]
+    public void Configure_WithOAuth2Jwt_LogsTokenValidity()
+    {
+        var validToken = GenerateTestToken(DateTime.UtcNow.AddHours(1));
+        var options = new MqttClientOptions
+        {
+            AuthenticationMethod = "OAUTH2-JWT",
+            AuthenticationData = Encoding.UTF8.GetBytes(validToken),
+        };
+        var provider = new StubAccessTokenProvider();
+        var handler = new EnhancedAuthenticationHandler(options, provider);
+
+        var logMessages = new System.Collections.Generic.List<string>();
+        Action<string, string> logHandler = (level, message) =>
+        {
+            if (level == "Information") logMessages.Add(message);
+        };
+        AppLogger.OnLogMessage += logHandler;
+
+        try
+        {
+            handler.Configure();
+            Assert.Contains(logMessages, log => log.Contains("Enhanced Authentication (OAUTH2-JWT): Token is valid until"));
+        }
+        finally
+        {
             AppLogger.OnLogMessage -= logHandler;
         }
     }

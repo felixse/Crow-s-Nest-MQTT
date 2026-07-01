@@ -1,4 +1,9 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using Aspire.Hosting.ApplicationModel;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
@@ -59,6 +64,67 @@ var tlsInstance = builder.AddProject<Projects.CrowsNestMqtt_App>("crows-nest-mqt
     .WithEnvironment("CROWSNEST__USE_TLS", "true");
 sharedEnvVars(tlsInstance);
 
+// -------------------------------------------------------------------------
+// Azure Event Grid emulation (local testing only, no real Azure resources).
+// -------------------------------------------------------------------------
+// The mock broker accepts CONNECT packets whose AuthenticationMethod is
+// "OAUTH2-JWT" and whose AuthenticationData is a well-formed JWT. Signatures
+// are not verified, so any locally-signed JWT works. We synthesize a fresh JWT
+// per AppHost run and pass it to the client via CROWSNEST__AZURE_TOKEN_OVERRIDE,
+// which short-circuits DefaultAzureCredential.
+const int mockEgPort = 51883; // Fixed so the client can reference it via env var
+var mockBrokerDllPath = Path.GetFullPath(Path.Combine(
+    builder.AppHostDirectory,
+    "..", "..", "tools", "MockAzureEventGridBroker", "bin",
+    // Match the AppHost's own build configuration so 'dotnet run --configuration
+    // Release' picks up the Release DLL. Aspire's Environment.EnvironmentName is
+    // "Development" by default and doesn't reflect the actual build config, so
+    // infer it from where the AppHost assembly itself was loaded from.
+    Path.GetFileName(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))
+        is "Release" or "release" ? "Release"
+        : Path.GetFileName(Path.GetDirectoryName(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))!)
+            is "Release" or "release" ? "Release"
+        : "Debug",
+    "net10.0",
+    "CrowsNestMqtt.MockAzureEventGridBroker.dll"));
+var mockBrokerWorkingDir = Path.GetDirectoryName(mockBrokerDllPath)!;
+
+var mockEgBroker = builder.AddExecutable(
+        "mock-eg-broker",
+        "dotnet",
+        mockBrokerWorkingDir,
+        mockBrokerDllPath)
+    .WithEnvironment("MOCK_EG_HOST", "127.0.0.1")
+    .WithEnvironment("MOCK_EG_PORT", mockEgPort.ToString(System.Globalization.CultureInfo.InvariantCulture))
+    .WithEnvironment("MOCK_EG_USE_TLS", "true")
+    // Expose the listener as an Aspire endpoint so the dashboard shows the URL
+    // and downstream resources can reference it via .GetEndpoint("mqtts").
+    .WithEndpoint(port: mockEgPort, targetPort: mockEgPort, name: "mqtts", scheme: "tcp", isProxied: false);
+
+var mockEgEndpoint = mockEgBroker.GetEndpoint("mqtts");
+
+var devJwt = CreateDevJwt();
+
+var azureInstance = builder.AddProject<Projects.CrowsNestMqtt_App>("crows-nest-mqtt-azure")
+    .WithReference(mockEgEndpoint)
+    .WaitFor(mockEgBroker)
+    .WithEnvironment("CROWSNEST__HOSTNAME", mockEgEndpoint.Property(EndpointProperty.Host))
+    .WithEnvironment("CROWSNEST__PORT", mockEgEndpoint.Property(EndpointProperty.Port))
+    .WithEnvironment("CROWSNEST__USE_TLS", "true")
+    .WithEnvironment("CROWSNEST__AUTH_MODE", "azure")
+    .WithEnvironment("CROWSNEST__AUTH_SCOPE", "https://eventgrid.azure.net/.default")
+    .WithEnvironment("CROWSNEST__AZURE_TOKEN_OVERRIDE", devJwt);
+// Note: sharedEnvVars(azureInstance) intentionally NOT invoked — it would
+// overwrite CROWSNEST__AUTH_MODE=azure with "anonymous". We still want the
+// buffer/session defaults, so we set them individually here:
+azureInstance
+    .WithEnvironment("CROWSNEST__CLIENT_ID", "")
+    .WithEnvironment("CROWSNEST__KEEP_ALIVE_SECONDS", "0")
+    .WithEnvironment("CROWSNEST__CLEAN_SESSION", "true")
+    .WithEnvironment("CROWSNEST__SESSION_EXPIRY_SECONDS", "0")
+    .WithEnvironment("CROWSNEST__SUBSCRIPTION_QOS", "1")
+    .WithEnvironment("CROWSNEST__TOPIC_BUFFER_LIMITS", """[{"TopicFilter":"#","MaxSizeBytes":11048576}]""");
+
 // Add delayed test data sender that publishes sample data after broker is ready
 var toolsDir = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "..", "..", "tools"));
 builder.AddExecutable("test-data-sender", "pwsh", toolsDir, "-File", "SendTestDataDelayed.ps1")
@@ -69,3 +135,33 @@ builder.AddExecutable("test-data-sender", "pwsh", toolsDir, "-File", "SendTestDa
     .WithEnvironment("MQTT_USE_TLS", "false");
 
 builder.Build().Run();
+
+// -------------------------------------------------------------------------
+// Development JWT synthesis for the Azure Event Grid emulation instance.
+// The mock broker does not verify the signature; any well-formed JWT works.
+// -------------------------------------------------------------------------
+static string CreateDevJwt()
+{
+    var keyBytes = new byte[32];
+    RandomNumberGenerator.Fill(keyBytes);
+    var credentials = new SigningCredentials(
+        new SymmetricSecurityKey(keyBytes),
+        SecurityAlgorithms.HmacSha256Signature);
+
+    var handler = new JwtSecurityTokenHandler();
+    var token = handler.CreateJwtSecurityToken(
+        issuer: "https://sts.local",
+        audience: "https://eventgrid.azure.net",
+        subject: new ClaimsIdentity(new[]
+        {
+            new Claim("sub", "dev-user"),
+            new Claim("scp", "EventGrid.Publish EventGrid.Receive"),
+        }),
+        notBefore: DateTime.UtcNow.AddMinutes(-5),
+        expires: DateTime.UtcNow.AddHours(1),
+        issuedAt: DateTime.UtcNow,
+        signingCredentials: credentials);
+
+    return handler.WriteToken(token);
+}
+

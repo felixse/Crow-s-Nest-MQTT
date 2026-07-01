@@ -164,6 +164,49 @@ namespace CrowsNestMqtt.UnitTests
         }
 
         [Fact]
+        public void EnvironmentSettingsOverrides_ParsesAzureAuthMode()
+        {
+            try
+            {
+                Environment.SetEnvironmentVariable("CROWSNEST__AUTH_MODE", "azure");
+                Environment.SetEnvironmentVariable("CROWSNEST__AUTH_SCOPE", "api://custom/.default");
+
+                var result = EnvironmentSettingsOverrides.Load();
+
+                Assert.True(result.HasOverrides);
+                Assert.IsType<AzureAuthenticationMode>(result.AuthMode);
+                Assert.Equal("api://custom/.default", ((AzureAuthenticationMode)result.AuthMode!).Scope);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("CROWSNEST__AUTH_MODE", null);
+                Environment.SetEnvironmentVariable("CROWSNEST__AUTH_SCOPE", null);
+            }
+        }
+
+        [Fact]
+        public void EnvironmentSettingsOverrides_ParsesAzureAuthMode_DefaultScopeWhenAbsent()
+        {
+            try
+            {
+                Environment.SetEnvironmentVariable("CROWSNEST__AUTH_MODE", "azure");
+                // Intentionally not setting CROWSNEST__AUTH_SCOPE
+
+                var result = EnvironmentSettingsOverrides.Load();
+
+                Assert.True(result.HasOverrides);
+                var azure = Assert.IsType<AzureAuthenticationMode>(result.AuthMode);
+                Assert.Null(azure.Scope);
+                Assert.Equal(AzureAuthenticationMode.DefaultScope, azure.EffectiveScope);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("CROWSNEST__AUTH_MODE", null);
+                Environment.SetEnvironmentVariable("CROWSNEST__AUTH_SCOPE", null);
+            }
+        }
+
+        [Fact]
         public void EnvironmentSettingsOverrides_ParsesAllCrowsnestVars()
         {
             // Arrange

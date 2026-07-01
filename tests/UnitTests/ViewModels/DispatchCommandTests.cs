@@ -179,10 +179,29 @@ public class DispatchCommandTests : IDisposable
     }
 
     [Fact]
-    public void DispatchCommand_SetAuthMode_Enhanced_ShouldSetMethod()
+    public void DispatchCommand_SetAuthMode_Enhanced_ShouldSetMode()
     {
         Dispatch(CommandType.SetAuthMode, "enhanced");
-        Assert.Equal("Enhanced Authentication", _viewModel.Settings.AuthenticationMethod);
+        Assert.Equal(SettingsViewModel.AuthModeSelection.Enhanced, _viewModel.Settings.SelectedAuthMode);
+    }
+
+    [Fact]
+    public void DispatchCommand_SetAuthMode_Azure_ShouldSetModeAndAutoConfigure()
+    {
+        Dispatch(CommandType.SetAuthMode, "azure");
+        Assert.Equal(SettingsViewModel.AuthModeSelection.Azure, _viewModel.Settings.SelectedAuthMode);
+        // Selecting Azure forces TLS + port 8883 + TCP transport for Event Grid.
+        Assert.True(_viewModel.Settings.UseTls);
+        Assert.Equal(8883, _viewModel.Settings.Port);
+        Assert.Equal(CrowsNestMqtt.BusinessLogic.Configuration.TransportProtocol.Tcp, _viewModel.Settings.SelectedTransport);
+    }
+
+    [Fact]
+    public void DispatchCommand_SetAuthScope_ShouldSetScope()
+    {
+        Dispatch(CommandType.SetAuthScope, "api://my-app/.default");
+        Assert.Equal("api://my-app/.default", _viewModel.Settings.AuthenticationScope);
+        Assert.Contains("api://my-app/.default", _viewModel.StatusBarText);
     }
 
     [Fact]

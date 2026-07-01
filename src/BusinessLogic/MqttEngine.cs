@@ -41,6 +41,7 @@ public class IdentifiedMqttApplicationMessageReceivedEventArgs : EventArgs // No
 public class MqttEngine : IMqttService // Implement the interface
 {
     private readonly IMqttClient _client;
+    private readonly Func<string, IAccessTokenProvider> _accessTokenProviderFactory;
     private MqttConnectionSettings _settings;
 private bool _isDisposing;
 private MqttClientOptions? _currentOptions;
@@ -53,7 +54,14 @@ private MqttClientOptions? _currentOptions;
     internal const long DefaultMaxTopicBufferSize = 1 * 1024 * 1024; // Changed to internal const
     private readonly object _bufferReconfigLock = new(); // Lock for reconfiguring existing topic buffers
     private string? _ownClientId;
-    
+
+    // Active access-token provider for the current connection (Azure auth only).
+    private IAccessTokenProvider? _activeAccessTokenProvider;
+    // Timer that proactively refreshes the OAuth token via MQTT v5 AUTH packets.
+    private Timer? _tokenRefreshTimer;
+    // Lead time before token expiry at which the refresh fires.
+    internal static readonly TimeSpan TokenRefreshLeadTime = TimeSpan.FromMinutes(5);
+
     // Track subscription error to preserve error message during disconnect
     private string? _pendingErrorMessage;
 
@@ -69,8 +77,22 @@ private MqttClientOptions? _currentOptions;
     public event EventHandler<string>? LogMessage;
 
     public MqttEngine(MqttConnectionSettings settings)
+        : this(settings, scope => new AzureAccessTokenProvider(scope))
+    {
+    }
+
+    /// <summary>
+    /// Test-friendly constructor that allows injecting an access-token provider factory.
+    /// The factory receives the OAuth scope and returns the provider used during Azure
+    /// authentication. Production code uses <see cref="AzureAccessTokenProvider"/>.
+    /// </summary>
+    internal MqttEngine(
+        MqttConnectionSettings settings,
+        Func<string, IAccessTokenProvider> accessTokenProviderFactory)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _accessTokenProviderFactory = accessTokenProviderFactory
+            ?? throw new ArgumentNullException(nameof(accessTokenProviderFactory));
         _topicSpecificBufferLimits = EnsureDefaultTopicLimit(settings.TopicSpecificBufferLimits, settings.DefaultTopicBufferSizeBytes);
         var factory = new MqttClientFactory();
         _client = factory.CreateMqttClient();
@@ -175,8 +197,15 @@ private MqttClientOptions? _currentOptions;
         }
     }
 
-    // Builds MqttClientOptions based on current settings
-    private MqttClientOptions BuildMqttOptions()
+    // Builds MqttClientOptions based on current settings.
+    // Kept as a parameterless overload so existing reflection-based unit tests that
+    // invoke this method without arguments continue to work.
+    private MqttClientOptions BuildMqttOptions() => BuildMqttOptionsCore(prefetchedAzureToken: null);
+
+    // Builds MqttClientOptions based on current settings.
+    // When the auth mode is Azure, <paramref name="prefetchedAzureToken"/> must contain
+    // the access token to embed in the CONNECT packet.
+    private MqttClientOptions BuildMqttOptionsCore(AccessTokenResult? prefetchedAzureToken)
     {
         var builder = new MqttClientOptionsBuilder()
             .WithProtocolVersion(MQTTnet.Formatter.MqttProtocolVersion.V500)
@@ -185,10 +214,14 @@ private MqttClientOptions? _currentOptions;
             .WithWillQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
             .WithTimeout(TimeSpan.FromSeconds(10));
 
+        // Azure Event Grid requires TLS on TCP at port 8883 — enforce here so callers
+        // can rely on the auth mode alone.
+        bool useTls = _settings.UseTls || _settings.AuthMode is AzureAuthenticationMode;
+
         // Configure transport
-        if (_settings.Transport == TransportProtocol.WebSocket)
+        if (_settings.Transport == TransportProtocol.WebSocket && _settings.AuthMode is not AzureAuthenticationMode)
         {
-            var scheme = _settings.UseTls ? "wss" : "ws";
+            var scheme = useTls ? "wss" : "ws";
             var path = string.IsNullOrWhiteSpace(_settings.WebSocketPath) ? "/mqtt" : _settings.WebSocketPath;
             var uri = $"{scheme}://{_settings.Hostname}:{_settings.Port}{path}";
             builder.WithWebSocketServer(o => o.WithUri(uri));
@@ -209,7 +242,7 @@ private MqttClientOptions? _currentOptions;
         }
 
         // TLS support
-        if (_settings.UseTls)
+        if (useTls)
         {
             var tlsOptions = new MqttClientTlsOptions
             {
@@ -241,6 +274,16 @@ private MqttClientOptions? _currentOptions;
                         Encoding.UTF8.GetBytes(enhancedAuth.AuthenticationData));
                 }
                 break;
+            case AzureAuthenticationMode:
+                if (prefetchedAzureToken is null)
+                {
+                    throw new InvalidOperationException(
+                        "Azure authentication mode requires a pre-fetched access token.");
+                }
+                builder.WithEnhancedAuthentication(
+                    AzureAuthenticationMode.AuthenticationMethod,
+                    Encoding.UTF8.GetBytes(prefetchedAzureToken.Value.Token));
+                break;
             case AnonymousAuthenticationMode:
                 // No credentials to add for anonymous mode
                 break;
@@ -266,18 +309,66 @@ public async Task ConnectAsync(CancellationToken cancellationToken = default)
     _linkedConnectionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _connectionCts.Token);
     var combinedToken = _linkedConnectionCts.Token;
 
+    DisposeTokenRefreshTimer();
+    _activeAccessTokenProvider = null;
+
     try
     {
         // Announce that we are starting the connection process.
         ConnectionStateChanged?.Invoke(this, new MqttConnectionStateChangedEventArgs(false, null, ConnectionStatusState.Connecting));
-        
-        _currentOptions = BuildMqttOptions();
+
+        AccessTokenResult? azureToken = null;
+        if (_settings.AuthMode is AzureAuthenticationMode azureMode)
+        {
+            try
+            {
+                _activeAccessTokenProvider = _accessTokenProviderFactory(azureMode.EffectiveScope);
+                azureToken = await _activeAccessTokenProvider
+                    .GetTokenAsync(combinedToken)
+                    .ConfigureAwait(false);
+                LogMessage?.Invoke(
+                    this,
+                    $"Acquired Azure access token (expires {azureToken.Value.ExpiresOn:O}).");
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                var msg = $"Failed to acquire Azure access token: {ex.Message}";
+                LogMessage?.Invoke(this, msg);
+                _pendingErrorMessage = msg;
+                ConnectionStateChanged?.Invoke(
+                    this,
+                    new MqttConnectionStateChangedEventArgs(false, ex, ConnectionStatusState.Disconnected, errorMessage: msg));
+                return;
+            }
+        }
+
+        _currentOptions = BuildMqttOptionsCore(azureToken);
+
+        // Wire up the enhanced authentication handler (for K8S-SAT logging and Azure
+        // OAUTH2-JWT token refresh). For Azure mode, pass the access token provider so
+        // server-initiated AUTH packets get a freshly minted token.
+        if (_settings.AuthMode is EnhancedAuthenticationMode || _settings.AuthMode is AzureAuthenticationMode)
+        {
+            var handler = new EnhancedAuthenticationHandler(_currentOptions, _activeAccessTokenProvider);
+            handler.Configure();
+        }
+
         _ownClientId = _currentOptions.ClientId;
         LogMessage?.Invoke(this, $"Attempting to connect to {_currentOptions.ChannelOptions} with ClientId '{_currentOptions.ClientId ?? "<generated>"}'.");
         
         // This call will either succeed and trigger OnClientConnected,
         // fail and trigger OnClientDisconnected, or be cancelled.
         await _client.ConnectAsync(_currentOptions, combinedToken).ConfigureAwait(false);
+
+        // Schedule proactive token refresh for Azure connections.
+        if (azureToken is not null && _activeAccessTokenProvider is not null)
+        {
+            ScheduleTokenRefresh(azureToken.Value.ExpiresOn);
+        }
     }
     catch (OperationCanceledException)
     {
@@ -292,12 +383,70 @@ public async Task ConnectAsync(CancellationToken cancellationToken = default)
     }
 }
 
+/// <summary>
+/// Schedules a one-shot timer that triggers an MQTT v5 AUTH round-trip
+/// <see cref="TokenRefreshLeadTime"/> before <paramref name="tokenExpiresOn"/>.
+/// </summary>
+private void ScheduleTokenRefresh(DateTimeOffset tokenExpiresOn)
+{
+    DisposeTokenRefreshTimer();
+
+    var delay = tokenExpiresOn - DateTimeOffset.UtcNow - TokenRefreshLeadTime;
+    if (delay < TimeSpan.FromSeconds(5))
+    {
+        // Token is already close to (or past) expiry; refresh immediately.
+        delay = TimeSpan.FromSeconds(1);
+    }
+
+    LogMessage?.Invoke(this, $"Scheduling Azure token refresh in {delay.TotalMinutes:F1} minutes.");
+    _tokenRefreshTimer = new Timer(_ => _ = RefreshAzureTokenAsync(), null, delay, Timeout.InfiniteTimeSpan);
+}
+
+private void DisposeTokenRefreshTimer()
+{
+    var timer = _tokenRefreshTimer;
+    _tokenRefreshTimer = null;
+    timer?.Dispose();
+}
+
+private async Task RefreshAzureTokenAsync()
+{
+    var provider = _activeAccessTokenProvider;
+    if (provider is null || !_client.IsConnected)
+    {
+        return;
+    }
+
+    try
+    {
+        LogMessage?.Invoke(this, "Refreshing Azure access token via MQTT v5 AUTH packet.");
+        var refreshed = await provider.GetTokenAsync(CancellationToken.None).ConfigureAwait(false);
+
+        var data = new MqttEnhancedAuthenticationExchangeData
+        {
+            AuthenticationData = Encoding.UTF8.GetBytes(refreshed.Token),
+            ReasonCode = MQTTnet.Protocol.MqttAuthenticateReasonCode.ReAuthenticate,
+        };
+
+        await _client.SendEnhancedAuthenticationExchangeDataAsync(data, CancellationToken.None).ConfigureAwait(false);
+
+        LogMessage?.Invoke(this, $"Azure access token refreshed (new expiry {refreshed.ExpiresOn:O}).");
+        ScheduleTokenRefresh(refreshed.ExpiresOn);
+    }
+    catch (Exception ex)
+    {
+        LogMessage?.Invoke(this, $"Proactive token refresh failed: {ex.Message}. Will rely on reconnect.");
+    }
+}
+
 public async Task DisconnectAsync(CancellationToken cancellationToken = default)
 {
     // This method now has a single responsibility: to signal that the user wants to stop.
     // It cancels the master token for this connection cycle.
     LogMessage?.Invoke(this, "Disconnect/Cancel requested by user.");
     _connectionCts?.Cancel();
+    DisposeTokenRefreshTimer();
+    _activeAccessTokenProvider = null;
 
     // If the client is already connected, we can also initiate a graceful disconnect.
     // The OnClientDisconnected handler will still fire, but this can speed up the process.
@@ -1051,6 +1200,7 @@ public async Task DisconnectAsync(CancellationToken cancellationToken = default)
             _isDisposing = true;
 
             _messageProcessingTimer.Dispose();
+            DisposeTokenRefreshTimer();
             _pendingMessages.Clear();
 
             _client.ApplicationMessageReceivedAsync -= HandleIncomingMessageAsync;
@@ -1109,6 +1259,9 @@ private Task OnClientConnected(MqttClientConnectedEventArgs args)
     private Task OnClientDisconnected(MqttClientDisconnectedEventArgs e)
     {
         LogMessage?.Invoke(this, $"Disconnected: {e.ReasonString}. Client Was Connected: {e.ClientWasConnected}");
+
+        // Stop the token-refresh timer; if we reconnect a fresh token will be fetched.
+        DisposeTokenRefreshTimer();
 
         // If the disconnect was intentional (user clicked Disconnect/Cancel) or we are disposing,
         // then set the state to Disconnected and do not attempt to reconnect.

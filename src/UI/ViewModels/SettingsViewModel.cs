@@ -23,6 +23,7 @@ using System.Linq; // For .Select
 [JsonSerializable(typeof(CrowsNestMqtt.BusinessLogic.Configuration.AnonymousAuthenticationMode))] // Added for AuthMode
 [JsonSerializable(typeof(CrowsNestMqtt.BusinessLogic.Configuration.UsernamePasswordAuthenticationMode))] // Added for AuthMode
 [JsonSerializable(typeof(CrowsNestMqtt.BusinessLogic.Configuration.EnhancedAuthenticationMode))] // Added for AuthMode
+[JsonSerializable(typeof(CrowsNestMqtt.BusinessLogic.Configuration.AzureAuthenticationMode))] // Added for Azure Event Grid auth
 [JsonSerializable(typeof(CrowsNestMqtt.BusinessLogic.Exporter.ExportTypes))]
 [JsonSerializable(typeof(Nullable<CrowsNestMqtt.BusinessLogic.Exporter.ExportTypes>))]
 [JsonSerializable(typeof(CrowsNestMqtt.BusinessLogic.Configuration.TransportProtocol))]
@@ -46,7 +47,8 @@ public class SettingsViewModel : ReactiveObject
     {
         Anonymous,
         UsernamePassword,
-        Enhanced
+        Enhanced,
+        Azure
     }
 
     internal static string _settingsFilePath = Path.Combine(
@@ -168,11 +170,13 @@ public class SettingsViewModel : ReactiveObject
             this.WhenAnyValue(x => x.SubscriptionQoS),
             (_, _, _, _, _, _, _, _, _, _, _, _, _, _, _) => Unit.Default);
 
-        // Observable for transport-related property changes
+        // Observable for transport-related property changes (and Azure scope, kept here
+        // because the simplePropertiesChanged CombineLatest already hit its 15-arg cap)
         var transportPropertiesChanged = Observable.CombineLatest(
             this.WhenAnyValue(x => x.SelectedTransport),
             this.WhenAnyValue(x => x.WebSocketPath),
-            (_, _) => Unit.Default);
+            this.WhenAnyValue(x => x.AuthenticationScope),
+            (_, _, _) => Unit.Default);
 
         // Observable for changes within the TopicSpecificLimits collection (add/remove)
         var collectionChanged = Observable.FromEventPattern<System.Collections.Specialized.NotifyCollectionChangedEventHandler, System.Collections.Specialized.NotifyCollectionChangedEventArgs>(
@@ -229,7 +233,8 @@ public class SettingsViewModel : ReactiveObject
             {
                 AuthModeSelection.Anonymous,
                 AuthModeSelection.UsernamePassword,
-                AuthModeSelection.Enhanced
+                AuthModeSelection.Enhanced,
+                AuthModeSelection.Azure
             });
 
         _availableTransports = new ReadOnlyObservableCollection<TransportProtocol>(
@@ -260,6 +265,19 @@ public class SettingsViewModel : ReactiveObject
             this.RaiseAndSetIfChanged(ref _selectedAuthMode, value);
             this.RaisePropertyChanged(nameof(IsUsernamePasswordSelected));
             this.RaisePropertyChanged(nameof(IsEnhancedAuthSelected));
+            this.RaisePropertyChanged(nameof(IsAzureAuthSelected));
+
+            // Azure Event Grid namespaces require TLS on TCP port 8883 with MQTT v5.
+            // Auto-apply those values so a user picking Azure interactively doesn't
+            // need to remember the prerequisites. Skipped during LoadSettings /
+            // From / ApplyEnvironmentOverrides so file- or env-supplied Port and
+            // Transport values aren't clobbered.
+            if (value == AuthModeSelection.Azure && !_isLoading)
+            {
+                UseTls = true;
+                Port = 8883;
+                SelectedTransport = TransportProtocol.Tcp;
+            }
         }
     }
 
@@ -267,6 +285,12 @@ public class SettingsViewModel : ReactiveObject
     public bool IsUsernamePasswordSelected => SelectedAuthMode == AuthModeSelection.UsernamePassword;
 
     public bool IsEnhancedAuthSelected => SelectedAuthMode == AuthModeSelection.Enhanced;
+
+    /// <summary>
+    /// Whether Azure (DefaultAzureCredential / OAUTH2-JWT) auth mode is currently selected.
+    /// Used by UI bindings to show Azure-specific configuration rows.
+    /// </summary>
+    public bool IsAzureAuthSelected => SelectedAuthMode == AuthModeSelection.Azure;
 
     private string _authUsername = string.Empty;
     public string AuthUsername
@@ -294,6 +318,17 @@ public class SettingsViewModel : ReactiveObject
     {
         get => _authenticationData;
         set => this.RaiseAndSetIfChanged(ref _authenticationData, value);
+    }
+
+    private string? _authenticationScope;
+    /// <summary>
+    /// OAuth scope used when Azure authentication mode is active. When null/empty, the
+    /// engine falls back to <see cref="AzureAuthenticationMode.DefaultScope"/>.
+    /// </summary>
+    public string? AuthenticationScope
+    {
+        get => _authenticationScope;
+        set => this.RaiseAndSetIfChanged(ref _authenticationScope, value);
     }
 
     private string? _clientId; // Null or empty means MQTTnet generates one
@@ -361,6 +396,10 @@ public class SettingsViewModel : ReactiveObject
         {
             authModeSetting = new EnhancedAuthenticationMode(AuthenticationMethod, AuthenticationData);
         }
+        else if (SelectedAuthMode == AuthModeSelection.Azure)
+        {
+            authModeSetting = new AzureAuthenticationMode(AuthenticationScope);
+        }
         else
         {
             authModeSetting = new AnonymousAuthenticationMode();
@@ -388,122 +427,173 @@ public class SettingsViewModel : ReactiveObject
 
     public void From(SettingsData settingsData)
     {
-        Hostname = settingsData.Hostname;
-        Port = settingsData.Port;
-        ClientId = settingsData.ClientId;
-        KeepAliveIntervalSeconds = settingsData.KeepAliveIntervalSeconds;
-        CleanSession = settingsData.CleanSession;
-        SessionExpiryIntervalSeconds = settingsData.SessionExpiryIntervalSeconds;
-        ExportFormat = settingsData.ExportFormat;
-        ExportPath = settingsData.ExportPath;
-        UseTls = settingsData.UseTls;
-        SubscriptionQoS = settingsData.SubscriptionQoS;
-        SelectedTransport = settingsData.Transport;
-        WebSocketPath = settingsData.WebSocketPath;
-        TopicSpecificLimits.Clear();
-        
-        // Ensure we always have the default '#' limit
-        bool hasDefaultLimit = false;
-        if (settingsData.TopicSpecificBufferLimits != null)
+        // Suppress the Azure auth-mode setter's auto-config here — settingsData
+        // may legitimately carry a non-default Port/Transport (e.g. from a
+        // persisted Aspire-provisioned configuration) that must not be
+        // overwritten with the Event Grid 8883/Tcp defaults.
+        var wasLoading = _isLoading;
+        _isLoading = true;
+        try
         {
-            foreach (var limitModel in settingsData.TopicSpecificBufferLimits)
+            Hostname = settingsData.Hostname;
+            Port = settingsData.Port;
+            ClientId = settingsData.ClientId;
+            KeepAliveIntervalSeconds = settingsData.KeepAliveIntervalSeconds;
+            CleanSession = settingsData.CleanSession;
+            SessionExpiryIntervalSeconds = settingsData.SessionExpiryIntervalSeconds;
+            ExportFormat = settingsData.ExportFormat;
+            ExportPath = settingsData.ExportPath;
+            UseTls = settingsData.UseTls;
+            SubscriptionQoS = settingsData.SubscriptionQoS;
+            SelectedTransport = settingsData.Transport;
+            WebSocketPath = settingsData.WebSocketPath;
+            TopicSpecificLimits.Clear();
+
+            // Ensure we always have the default '#' limit
+            bool hasDefaultLimit = false;
+            if (settingsData.TopicSpecificBufferLimits != null)
             {
-                TopicSpecificLimits.Add(new TopicBufferLimitViewModel(limitModel));
-                if (limitModel.TopicFilter == "#")
+                foreach (var limitModel in settingsData.TopicSpecificBufferLimits)
                 {
-                    hasDefaultLimit = true;
+                    TopicSpecificLimits.Add(new TopicBufferLimitViewModel(limitModel));
+                    if (limitModel.TopicFilter == "#")
+                    {
+                        hasDefaultLimit = true;
+                    }
                 }
             }
-        }
-        
-        // Add default '#' limit if not present (1MB = 1024*1024 bytes)
-        if (!hasDefaultLimit)
-        {
-            TopicSpecificLimits.Insert(0, new TopicBufferLimitViewModel(new TopicBufferLimit("#", 1024 * 1024)));
-        }
 
-        // Handle AuthMode and credentials
-        if (settingsData.AuthMode is EnhancedAuthenticationMode enhancedAuth)
-        {
-            SelectedAuthMode = AuthModeSelection.Enhanced;
-            AuthenticationMethod = enhancedAuth.AuthenticationMethod;
-            AuthenticationData = enhancedAuth.AuthenticationData;
-            AuthUsername = string.Empty;
-            AuthPassword = string.Empty;
-        }
-        else if (settingsData.AuthMode is UsernamePasswordAuthenticationMode userPassAuth)
-        {
-            SelectedAuthMode = AuthModeSelection.UsernamePassword;
-            AuthUsername = userPassAuth.Username ?? string.Empty;
-            AuthPassword = userPassAuth.Password ?? string.Empty;
-            AuthenticationMethod = null;
-            AuthenticationData = null;
-        }
-        else // Covers AnonymousAuthenticationMode and null (for older settings if AuthMode wasn't present)
-        {
-            SelectedAuthMode = AuthModeSelection.Anonymous;
-            AuthUsername = string.Empty;
-            AuthPassword = string.Empty;
-            AuthenticationMethod = null;
-            AuthenticationData = null;
-        }
-    }
+            // Add default '#' limit if not present (1MB = 1024*1024 bytes)
+            if (!hasDefaultLimit)
+            {
+                TopicSpecificLimits.Insert(0, new TopicBufferLimitViewModel(new TopicBufferLimit("#", 1024 * 1024)));
+            }
 
-    /// <summary>
-    /// Applies environment variable overrides on top of file-based settings.
-    /// Only non-null properties in the overrides are applied.
-    /// </summary>
-    internal void ApplyEnvironmentOverrides(EnvironmentSettingsOverrides overrides)
-    {
-        if (overrides.Hostname != null) Hostname = overrides.Hostname;
-        if (overrides.Port.HasValue) Port = overrides.Port.Value;
-        if (overrides.ClientId != null) ClientId = overrides.ClientId;
-        if (overrides.KeepAliveIntervalSeconds.HasValue) KeepAliveIntervalSeconds = overrides.KeepAliveIntervalSeconds.Value;
-        if (overrides.CleanSession.HasValue) CleanSession = overrides.CleanSession.Value;
-        if (overrides.SessionExpiryIntervalSeconds.HasValue) SessionExpiryIntervalSeconds = overrides.SessionExpiryIntervalSeconds.Value;
-        if (overrides.UseTls.HasValue) UseTls = overrides.UseTls.Value;
-        if (overrides.SubscriptionQoS.HasValue) SubscriptionQoS = overrides.SubscriptionQoS.Value;
-        if (overrides.ExportFormat.HasValue) ExportFormat = overrides.ExportFormat.Value;
-        if (overrides.ExportPath != null) ExportPath = overrides.ExportPath;
-        if (overrides.Transport.HasValue) SelectedTransport = overrides.Transport.Value;
-        if (overrides.WebSocketPath != null) WebSocketPath = overrides.WebSocketPath;
-
-        if (overrides.AuthMode != null)
-        {
-            if (overrides.AuthMode is EnhancedAuthenticationMode enhanced)
+            // Handle AuthMode and credentials
+            if (settingsData.AuthMode is EnhancedAuthenticationMode enhancedAuth)
             {
                 SelectedAuthMode = AuthModeSelection.Enhanced;
-                AuthenticationMethod = enhanced.AuthenticationMethod;
-                AuthenticationData = enhanced.AuthenticationData;
+                AuthenticationMethod = enhancedAuth.AuthenticationMethod;
+                AuthenticationData = enhancedAuth.AuthenticationData;
                 AuthUsername = string.Empty;
                 AuthPassword = string.Empty;
+                AuthenticationScope = null;
             }
-            else if (overrides.AuthMode is UsernamePasswordAuthenticationMode userPass)
+            else if (settingsData.AuthMode is UsernamePasswordAuthenticationMode userPassAuth)
             {
                 SelectedAuthMode = AuthModeSelection.UsernamePassword;
-                AuthUsername = userPass.Username;
-                AuthPassword = userPass.Password;
+                AuthUsername = userPassAuth.Username ?? string.Empty;
+                AuthPassword = userPassAuth.Password ?? string.Empty;
+                AuthenticationMethod = null;
+                AuthenticationData = null;
+                AuthenticationScope = null;
+            }
+            else if (settingsData.AuthMode is AzureAuthenticationMode azureAuth)
+            {
+                AuthenticationScope = azureAuth.Scope;
+                SelectedAuthMode = AuthModeSelection.Azure;
+                AuthUsername = string.Empty;
+                AuthPassword = string.Empty;
                 AuthenticationMethod = null;
                 AuthenticationData = null;
             }
-            else
+            else // Covers AnonymousAuthenticationMode and null (for older settings if AuthMode wasn't present)
             {
                 SelectedAuthMode = AuthModeSelection.Anonymous;
                 AuthUsername = string.Empty;
                 AuthPassword = string.Empty;
                 AuthenticationMethod = null;
                 AuthenticationData = null;
+                AuthenticationScope = null;
             }
         }
-
-        if (overrides.TopicSpecificBufferLimits != null)
+        finally
         {
-            TopicSpecificLimits.Clear();
-            foreach (var limit in overrides.TopicSpecificBufferLimits)
+            _isLoading = wasLoading;
+        }
+    }
+
+    /// <summary>
+    /// Applies environment variable overrides on top of file-based settings.
+    /// Only non-null properties in the overrides are applied. Any Azure
+    /// auto-configuration triggered by <see cref="SelectedAuthMode"/> is
+    /// suppressed for the duration of this call so an explicit
+    /// <c>CROWSNEST__PORT</c>/<c>CROWSNEST__USE_TLS</c>/<c>CROWSNEST__TRANSPORT</c>
+    /// override is preserved rather than being reset to the Event Grid defaults
+    /// of 8883/true/Tcp.
+    /// </summary>
+    internal void ApplyEnvironmentOverrides(EnvironmentSettingsOverrides overrides)
+    {
+        var wasLoading = _isLoading;
+        _isLoading = true;
+        try
+        {
+            if (overrides.Hostname != null) Hostname = overrides.Hostname;
+            if (overrides.Port.HasValue) Port = overrides.Port.Value;
+            if (overrides.ClientId != null) ClientId = overrides.ClientId;
+            if (overrides.KeepAliveIntervalSeconds.HasValue) KeepAliveIntervalSeconds = overrides.KeepAliveIntervalSeconds.Value;
+            if (overrides.CleanSession.HasValue) CleanSession = overrides.CleanSession.Value;
+            if (overrides.SessionExpiryIntervalSeconds.HasValue) SessionExpiryIntervalSeconds = overrides.SessionExpiryIntervalSeconds.Value;
+            if (overrides.UseTls.HasValue) UseTls = overrides.UseTls.Value;
+            if (overrides.SubscriptionQoS.HasValue) SubscriptionQoS = overrides.SubscriptionQoS.Value;
+            if (overrides.ExportFormat.HasValue) ExportFormat = overrides.ExportFormat.Value;
+            if (overrides.ExportPath != null) ExportPath = overrides.ExportPath;
+            if (overrides.Transport.HasValue) SelectedTransport = overrides.Transport.Value;
+            if (overrides.WebSocketPath != null) WebSocketPath = overrides.WebSocketPath;
+
+            if (overrides.AuthMode != null)
             {
-                TopicSpecificLimits.Add(new TopicBufferLimitViewModel(limit));
+                if (overrides.AuthMode is EnhancedAuthenticationMode enhanced)
+                {
+                    SelectedAuthMode = AuthModeSelection.Enhanced;
+                    AuthenticationMethod = enhanced.AuthenticationMethod;
+                    AuthenticationData = enhanced.AuthenticationData;
+                    AuthUsername = string.Empty;
+                    AuthPassword = string.Empty;
+                    AuthenticationScope = null;
+                }
+                else if (overrides.AuthMode is UsernamePasswordAuthenticationMode userPass)
+                {
+                    SelectedAuthMode = AuthModeSelection.UsernamePassword;
+                    AuthUsername = userPass.Username;
+                    AuthPassword = userPass.Password;
+                    AuthenticationMethod = null;
+                    AuthenticationData = null;
+                    AuthenticationScope = null;
+                }
+                else if (overrides.AuthMode is AzureAuthenticationMode azure)
+                {
+                    AuthenticationScope = azure.Scope;
+                    SelectedAuthMode = AuthModeSelection.Azure;
+                    AuthUsername = string.Empty;
+                    AuthPassword = string.Empty;
+                    AuthenticationMethod = null;
+                    AuthenticationData = null;
+                }
+                else
+                {
+                    SelectedAuthMode = AuthModeSelection.Anonymous;
+                    AuthUsername = string.Empty;
+                    AuthPassword = string.Empty;
+                    AuthenticationMethod = null;
+                    AuthenticationData = null;
+                    AuthenticationScope = null;
+                }
             }
-            EnsureDefaultTopicLimit();
+
+            if (overrides.TopicSpecificBufferLimits != null)
+            {
+                TopicSpecificLimits.Clear();
+                foreach (var limit in overrides.TopicSpecificBufferLimits)
+                {
+                    TopicSpecificLimits.Add(new TopicBufferLimitViewModel(limit));
+                }
+                EnsureDefaultTopicLimit();
+            }
+        }
+        finally
+        {
+            _isLoading = wasLoading;
         }
     }
 

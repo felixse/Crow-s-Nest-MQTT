@@ -53,6 +53,8 @@ public enum CommandType
     SetAuthMethod,
     /// <summary> Set the MQTT authentication data. </summary>
     SetAuthData,
+    /// <summary> Set the OAuth scope used by Azure authentication mode. </summary>
+    SetAuthScope,
     /// <summary> Set the MQTT TLS usage flag. </summary>
     SetUseTls,
     /// <summary> Delete retained messages from a topic and its subtopics. </summary>
@@ -61,6 +63,12 @@ public enum CommandType
     GotoResponse,
     /// <summary> Publish a message to a topic. </summary>
     Publish,
+    /// <summary> Set the MQTT client identifier. </summary>
+    SetClientId,
+    /// <summary> Set the MQTT topic filter used for the client's initial subscription. </summary>
+    SetSubscriptionTopic,
+    /// <summary> Print the identity that will be used for Azure authentication. </summary>
+    AzureWhoAmI,
     /// <summary> Represents an unrecognized or invalid command. </summary>
     Unknown
 }

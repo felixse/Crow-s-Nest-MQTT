@@ -240,6 +240,8 @@ public class CommandParserServiceTests
     [InlineData(":setauthmode anonymous", "anonymous")]
     [InlineData(":setauthmode userpass", "userpass")]
     [InlineData(":setauthmode enhanced", "enhanced")]
+    [InlineData(":setauthmode azure", "azure")]
+    [InlineData(":setauthmode Azure", "Azure")] // Case is preserved in arguments; parser is case-insensitive
     public void ParseCommand_SetAuthMode_ValidModes_ReturnsSuccess(string input, string expectedMode)
     {
         var result = CommandParserService.ParseCommand(input, _settings);
@@ -265,5 +267,127 @@ public class CommandParserServiceTests
         Assert.Null(result.ParsedCommand);
         Assert.NotNull(result.ErrorMessage);
         Assert.Contains("Invalid arguments for :setauthmode", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // --- Specific Command Logic: SetAuthScope (Azure Event Grid) ---
+    [Theory]
+    [InlineData(":setauthscope https://eventgrid.azure.net/.default", "https://eventgrid.azure.net/.default")]
+    [InlineData(":setauthscope api://custom-scope/.default", "api://custom-scope/.default")]
+    public void ParseCommand_SetAuthScope_ValidScopes_ReturnsSuccess(string input, string expectedScope)
+    {
+        var result = CommandParserService.ParseCommand(input, _settings);
+
+        Assert.True(result.IsSuccess, $"Input '{input}' failed: {result.ErrorMessage}");
+        Assert.NotNull(result.ParsedCommand);
+        Assert.Equal(CommandType.SetAuthScope, result.ParsedCommand.Type);
+        Assert.NotNull(result.ParsedCommand.Arguments);
+        Assert.Single(result.ParsedCommand.Arguments);
+        Assert.Equal(expectedScope, result.ParsedCommand.Arguments[0]);
+    }
+
+    [Theory]
+    [InlineData(":setauthscope")]
+    [InlineData(":setauthscope scope1 scope2")]
+    public void ParseCommand_SetAuthScope_InvalidUsage_ReturnsFailure(string input)
+    {
+        var result = CommandParserService.ParseCommand(input, _settings);
+
+        Assert.False(result.IsSuccess);
+        Assert.Null(result.ParsedCommand);
+        Assert.NotNull(result.ErrorMessage);
+        Assert.Contains("Invalid arguments for :setauthscope", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // --- :setclientid ---
+    [Theory]
+    [InlineData(":setclientid my-client-id", "my-client-id")]
+    [InlineData(":setclientid alkopke-dev", "alkopke-dev")]
+    public void ParseCommand_SetClientId_WithArg_Succeeds(string input, string expected)
+    {
+        var result = CommandParserService.ParseCommand(input, _settings);
+
+        Assert.True(result.IsSuccess, result.ErrorMessage);
+        Assert.NotNull(result.ParsedCommand);
+        Assert.Equal(CommandType.SetClientId, result.ParsedCommand.Type);
+        Assert.Single(result.ParsedCommand.Arguments);
+        Assert.Equal(expected, result.ParsedCommand.Arguments[0]);
+    }
+
+    [Fact]
+    public void ParseCommand_SetClientId_NoArg_SucceedsWithEmptyArgs()
+    {
+        // :setclientid with no arg is the documented way to clear the value.
+        var result = CommandParserService.ParseCommand(":setclientid", _settings);
+
+        Assert.True(result.IsSuccess, result.ErrorMessage);
+        Assert.NotNull(result.ParsedCommand);
+        Assert.Equal(CommandType.SetClientId, result.ParsedCommand.Type);
+        Assert.Empty(result.ParsedCommand.Arguments);
+    }
+
+    [Fact]
+    public void ParseCommand_SetClientId_TooManyArgs_ReturnsFailure()
+    {
+        var result = CommandParserService.ParseCommand(":setclientid a b c", _settings);
+
+        Assert.False(result.IsSuccess);
+        Assert.Null(result.ParsedCommand);
+        Assert.Contains(":setclientid", result.ErrorMessage!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // --- :azurewhoami ---
+    [Fact]
+    public void ParseCommand_AzureWhoAmI_NoArgs_Succeeds()
+    {
+        var result = CommandParserService.ParseCommand(":azurewhoami", _settings);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(result.ParsedCommand);
+        Assert.Equal(CommandType.AzureWhoAmI, result.ParsedCommand.Type);
+        Assert.Empty(result.ParsedCommand.Arguments);
+    }
+
+    [Fact]
+    public void ParseCommand_AzureWhoAmI_WithArgs_ReturnsFailure()
+    {
+        var result = CommandParserService.ParseCommand(":azurewhoami extra", _settings);
+
+        Assert.False(result.IsSuccess);
+        Assert.Null(result.ParsedCommand);
+    }
+
+    // --- :setsubscription ---
+    [Theory]
+    [InlineData(":setsubscription sensors/#", "sensors/#")]
+    [InlineData(":setsubscription devices/+/telemetry", "devices/+/telemetry")]
+    public void ParseCommand_SetSubscription_WithArg_Succeeds(string input, string expected)
+    {
+        var result = CommandParserService.ParseCommand(input, _settings);
+
+        Assert.True(result.IsSuccess, result.ErrorMessage);
+        Assert.NotNull(result.ParsedCommand);
+        Assert.Equal(CommandType.SetSubscriptionTopic, result.ParsedCommand.Type);
+        Assert.Single(result.ParsedCommand.Arguments);
+        Assert.Equal(expected, result.ParsedCommand.Arguments[0]);
+    }
+
+    [Fact]
+    public void ParseCommand_SetSubscription_NoArg_SucceedsWithEmptyArgs()
+    {
+        var result = CommandParserService.ParseCommand(":setsubscription", _settings);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(result.ParsedCommand);
+        Assert.Equal(CommandType.SetSubscriptionTopic, result.ParsedCommand.Type);
+        Assert.Empty(result.ParsedCommand.Arguments);
+    }
+
+    [Fact]
+    public void ParseCommand_SetSubscription_TooManyArgs_ReturnsFailure()
+    {
+        var result = CommandParserService.ParseCommand(":setsubscription a b", _settings);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains(":setsubscription", result.ErrorMessage!, StringComparison.OrdinalIgnoreCase);
     }
 }

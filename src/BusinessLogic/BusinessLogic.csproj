@@ -9,6 +9,7 @@
     <PackageReference Include="MQTTnet" />
     <PackageReference Include="Serilog" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+    <PackageReference Include="Azure.Identity" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 

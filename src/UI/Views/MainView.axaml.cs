@@ -350,8 +350,12 @@ public partial class MainView : UserControl
             return;
         }
 
-        // Check if shortcuts should be suppressed (e.g., command palette has focus)
-        if (vm.KeyboardNavigationService.ShouldSuppressShortcuts())
+        // Suppress j/k/n shortcuts when any text input has focus. The service's
+        // built-in check only handles the command palette; extend it here so
+        // typing 'k' into the Client ID field (or any other TextBox/NumericUpDown)
+        // reaches the control instead of triggering vim-style navigation.
+        if (vm.KeyboardNavigationService.ShouldSuppressShortcuts()
+            || IsTextInputFocused())
         {
             return;
         }
@@ -390,6 +394,35 @@ public partial class MainView : UserControl
                     }
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Returns true when the currently-focused Avalonia element is a text-input
+    /// control that should absorb keystrokes rather than trigger vim-style
+    /// navigation. This is what stops <c>k</c> from being swallowed while the
+    /// user types into e.g. the Client ID textbox.
+    /// </summary>
+    private bool IsTextInputFocused()
+    {
+        try
+        {
+            var topLevel = TopLevel.GetTopLevel(this);
+            var focused = topLevel?.FocusManager?.GetFocusedElement();
+            return focused switch
+            {
+                null => false,
+                TextBox => true,   // covers MaskedTextBox and any derived text boxes
+                AutoCompleteBox => true,
+                NumericUpDown => true,
+                // AvaloniaEdit's TextArea (used by the payload viewer + publish editor)
+                AvaloniaEdit.Editing.TextArea => true,
+                _ => false,
+            };
+        }
+        catch
+        {
+            return false;
         }
     }
 

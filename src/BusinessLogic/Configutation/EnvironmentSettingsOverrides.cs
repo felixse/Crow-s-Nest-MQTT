@@ -193,6 +193,7 @@ public sealed record EnvironmentSettingsOverrides
             "enhanced" => new EnhancedAuthenticationMode(
                 ReadString("AUTH_METHOD"),
                 ReadString("AUTH_DATA")),
+            "azure" => new AzureAuthenticationMode(ReadString("AUTH_SCOPE")),
             _ => null
         };
     }

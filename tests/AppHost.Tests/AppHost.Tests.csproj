@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>CrowsNestMqtt.AppHostTests</RootNamespace>
+    <AssemblyName>CrowsNestMqtt.AppHostTests</AssemblyName>
+    <TargetFramework>$(TestsTargetFramework)</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="MQTTnet" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AppHost\AppHost.csproj" />
+    <!-- The tests launch the mock broker as a child process (dotnet <dll>), so
+         we need its output on disk. ReferenceOutputAssembly=false keeps the
+         test assembly clean of the mock's transitive types. -->
+    <ProjectReference Include="..\..\tools\MockAzureEventGridBroker\MockAzureEventGridBroker.csproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="xunit.runner.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+</Project>

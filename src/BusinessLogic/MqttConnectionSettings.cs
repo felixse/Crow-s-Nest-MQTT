@@ -39,4 +39,11 @@ public class MqttConnectionSettings
     /// Higher QoS reduces maximum message throughput.
     /// </summary>
     public int SubscriptionQoS { get; set; } = 1;
+    /// <summary>
+    /// MQTT topic filter used for the client's single startup subscription.
+    /// Defaults to <c>#</c> (all topics) which works for permissive brokers like EMQX
+    /// or Mosquitto. Azure Event Grid namespaces reject <c>#</c> — set this to a
+    /// filter that fits inside your Topic Space template (e.g. <c>sensors/#</c>).
+    /// </summary>
+    public string SubscriptionTopic { get; set; } = "#";
 }

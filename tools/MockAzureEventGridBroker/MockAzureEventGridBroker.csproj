@@ -13,4 +13,8 @@
     <PackageReference Include="MQTTnet.Server" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CrowsNestMqtt.MockBrokerTests" />
+  </ItemGroup>
 </Project>

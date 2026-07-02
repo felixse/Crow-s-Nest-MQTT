@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>CrowsNestMqtt.MockBrokerTests</RootNamespace>
+    <AssemblyName>CrowsNestMqtt.MockBrokerTests</AssemblyName>
+    <TargetFramework>$(TestsTargetFramework)</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="MQTTnet" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Default ReferenceOutputAssembly=true so the mock broker's IL is
+         loaded into this test process and coverlet can instrument it. -->
+    <ProjectReference Include="..\..\tools\MockAzureEventGridBroker\MockAzureEventGridBroker.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="xunit.runner.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+</Project>

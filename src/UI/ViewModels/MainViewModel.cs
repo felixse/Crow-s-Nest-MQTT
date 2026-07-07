@@ -51,6 +51,7 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
     private readonly IDeleteTopicService? _deleteTopicService; // Added delete topic service
     private readonly IMessageCorrelationService? _correlationService; // Added correlation service for request-response tracking
     private readonly IResponseIconService? _iconService; // Added icon service for UI status updates
+    private readonly ITopicStatisticsService _topicStatisticsService; // Added stats service for :stats command
     private readonly EnvironmentSettingsOverrides? _environmentOverrides; // Environment variable overrides
     private Timer? _updateTimer;
     private Timer? _uiHeartbeatTimer;
@@ -100,6 +101,9 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
     private readonly IPublishHistoryService? _publishHistoryService;
     private readonly IFileAutoCompleteService? _fileAutoCompleteService;
     private PublishViewModel? _publishViewModel;
+
+    // Statistics window support (:stats command)
+    private StatsViewModel? _statsViewModel;
 
     // Topic normalization helper (single place)
     private static string? NormalizeTopic(string? t) => string.IsNullOrWhiteSpace(t) ? null : t.Trim().TrimEnd('/');
@@ -735,9 +739,25 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
     public event EventHandler? TogglePublishWindowRequested;
 
     /// <summary>
+    /// Event raised when the statistics window (:stats) should be shown or focused.
+    /// </summary>
+    public event EventHandler? ShowStatsWindowRequested;
+
+    /// <summary>
     /// Gets the PublishViewModel for the publish window.
     /// </summary>
     public PublishViewModel? PublishViewModel => _publishViewModel;
+
+    /// <summary>
+    /// Gets the StatsViewModel for the statistics window. Lazily created on first :stats invocation.
+    /// </summary>
+    public StatsViewModel? StatsViewModel => _statsViewModel;
+
+    /// <summary>
+    /// Exposes the topic statistics service used to power the :stats window.
+    /// Primarily intended for testing.
+    /// </summary>
+    internal ITopicStatisticsService TopicStatisticsService => _topicStatisticsService;
 
     /// <summary>
     /// Gets or sets a value indicating whether the main application window currently has focus.
@@ -754,12 +774,13 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
     /// Sets up placeholder data and starts the UI update timer.
     /// </summary>
     // Constructor now requires ICommandParserService
-    public MainViewModel(ICommandParserService commandParserService, IMqttService? mqttService = null, IDeleteTopicService? deleteTopicService = null, IMessageCorrelationService? correlationService = null, IResponseIconService? iconService = null, EnvironmentSettingsOverrides? environmentOverrides = null, IScheduler? uiScheduler = null, IPublishHistoryService? publishHistoryService = null, IFileAutoCompleteService? fileAutoCompleteService = null, Func<string, IAccessTokenProvider>? azureTokenProviderFactory = null)
+    public MainViewModel(ICommandParserService commandParserService, IMqttService? mqttService = null, IDeleteTopicService? deleteTopicService = null, IMessageCorrelationService? correlationService = null, IResponseIconService? iconService = null, EnvironmentSettingsOverrides? environmentOverrides = null, IScheduler? uiScheduler = null, IPublishHistoryService? publishHistoryService = null, IFileAutoCompleteService? fileAutoCompleteService = null, Func<string, IAccessTokenProvider>? azureTokenProviderFactory = null, ITopicStatisticsService? topicStatisticsService = null)
     {
         _commandParserService = commandParserService ?? throw new ArgumentNullException(nameof(commandParserService)); // Store injected service
         _deleteTopicService = deleteTopicService; // Store injected delete topic service (optional)
         _correlationService = correlationService; // Store injected correlation service (optional)
         _iconService = iconService; // Store injected icon service (optional)
+        _topicStatisticsService = topicStatisticsService ?? new TopicStatisticsService(); // Lifetime per-topic aggregates for :stats
         _publishHistoryService = publishHistoryService; // Store injected publish history service (optional)
         _fileAutoCompleteService = fileAutoCompleteService; // Store injected file autocomplete service (optional)
         _azureTokenProviderFactory = azureTokenProviderFactory
@@ -1360,6 +1381,17 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
 
         topicCounts.TryGetValue(topic, out var currentCount);
         topicCounts[topic] = currentCount + 1;
+
+        // Record lifetime statistics before UI processing so :stats stays
+        // accurate even when the ring buffer later evicts this message.
+        try
+        {
+            _topicStatisticsService.Record(topic, (int)e.ApplicationMessage.Payload.Length, DateTime.UtcNow);
+        }
+        catch (Exception statsEx)
+        {
+            AppLogger.Warning($"Failed to record topic statistics for '{topic}': {statsEx.Message}");
+        }
 
         string preview;
         try
@@ -2606,6 +2638,7 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
         TopicTreeNodes.Clear();        // Clear the topic tree
         SelectedMessage = null;        // Deselect any active message
         SelectedNode = null;           // Deselect any active node
+        _topicStatisticsService.Reset(); // Also reset lifetime :stats aggregates
         Log.Information("Message history and topic tree cleared.");
         ShowStatus("Message history and topic tree cleared.");
     }
@@ -2990,6 +3023,39 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
 
         // Show the publish window
         ShowPublishWindowRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Gets the current <see cref="StatsViewModel"/>, creating and starting live refresh
+    /// on the first call. Subsequent calls return the same instance so window
+    /// re-opens share the same rows and selection state.
+    /// </summary>
+    internal StatsViewModel GetOrCreateStatsViewModel()
+    {
+        if (_statsViewModel == null)
+        {
+            _statsViewModel = new StatsViewModel(_topicStatisticsService);
+            this.RaisePropertyChanged(nameof(StatsViewModel));
+
+            if (!_testMode)
+            {
+                _statsViewModel.StartLiveRefresh();
+            }
+        }
+        else
+        {
+            // Refresh to make sure the window shows the current state on re-open.
+            _statsViewModel.RefreshNow();
+        }
+
+        return _statsViewModel;
+    }
+
+    private void HandleStatsCommand()
+    {
+        GetOrCreateStatsViewModel();
+        ShowStatsWindowRequested?.Invoke(this, EventArgs.Empty);
+        Log.Information("Statistics window requested via :stats command.");
     }
 
     private void ExecuteSubmitInput()
@@ -3405,6 +3471,9 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
                 case CommandType.Publish:
                     HandlePublishCommand(command);
                     break;
+                case CommandType.Stats:
+                    HandleStatsCommand();
+                    break;
                 default:
                     StatusBarText = $"Error: Unknown command type '{command.Type}'.";
                     Log.Warning("Unknown command type encountered: {CommandType}", command.Type);
@@ -3447,7 +3516,8 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
         { "deletetopic", (":deletetopic [topic-pattern] [--confirm]", "Deletes retained messages from a topic and its subtopics by publishing empty retained messages. Uses selected topic if no pattern specified.") },
         { "gotoresponse", (":gotoresponse", "Navigates to the response message for the currently selected MQTT v5 request message.") },
         { "settings", (":settings", "Toggles the visibility of the settings pane.") },
-        { "publish", (":publish [topic] [@file|text]", "Opens the publish window. Optionally pre-fills topic and payload from a file (@path) or inline text.") }
+        { "publish", (":publish [topic] [@file|text]", "Opens the publish window. Optionally pre-fills topic and payload from a file (@path) or inline text.") },
+        { "stats", (":stats", "Opens a window with per-topic statistics (message count, total/average payload size, mean interval). The table can be copied as Markdown.") }
     };
 
     private void DisplayHelpInformation(string? commandName = null)
@@ -4809,6 +4879,7 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
                 CopyPayloadCommand?.Dispose(); // Dispose the new command
                 DeleteTopicCommand?.Dispose(); // Dispose delete topic command
                 NavigateToResponseCommand?.Dispose(); // Dispose navigate to response command
+                _statsViewModel?.Dispose(); // Dispose the :stats window VM (stops live refresh)
                                                // Interactions don't typically need explicit disposal unless they hold heavy resources
                 _cts.Dispose(); // Dispose the CancellationTokenSource itself
                 }

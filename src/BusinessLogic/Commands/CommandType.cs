@@ -69,6 +69,8 @@ public enum CommandType
     SetSubscriptionTopic,
     /// <summary> Print the identity that will be used for Azure authentication. </summary>
     AzureWhoAmI,
+    /// <summary> Open the statistics window showing per-topic message aggregates. </summary>
+    Stats,
     /// <summary> Represents an unrecognized or invalid command. </summary>
     Unknown
 }

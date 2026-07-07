@@ -364,6 +364,14 @@ public class CommandParserService : ICommandParserService
                 }
                 return CommandResult.Failure("Invalid arguments for :azurewhoami. Expected: :azurewhoami");
 
+            case "stats":
+                if (arguments.Count == 0)
+                {
+                    return CommandResult.SuccessCommand(new ParsedCommand(CommandType.Stats, arguments));
+                }
+                return CommandResult.Failure("Invalid arguments for :stats. Expected: :stats");
+
+
             case "setusetls":
                 if (arguments.Count == 1)
                 {

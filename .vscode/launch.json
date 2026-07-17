@@ -13,10 +13,14 @@
         },
         {
             "name": "C#: Aspire AppHost (http)",
-            "type": "dotnet",
+            "type": "coreclr",
             "request": "launch",
-            "projectPath": "${workspaceFolder}/src/AppHost/AppHost.csproj",
+            "program": "dotnet",
+            "cwd": "${workspaceFolder}",
             "args": [
+                "run",
+                "--project",
+                "${workspaceFolder}/src/AppHost/AppHost.csproj",
                 "--launch-profile",
                 "http"
             ]

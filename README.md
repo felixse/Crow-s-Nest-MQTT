@@ -176,6 +176,9 @@ Once the response message is received (first message send to given response topi
 
 Messages with MQTT V5 `message-expiry-interval` are visually marked when they expire: the message history shows them with strikethrough text and dimmed foreground, while the metadata view displays a yellow warning triangle icon next to the expiry field with the "EXPIRED" status.
 
+Using the `:stats` commands opens a non modal dialog, that shows MQTT message statistics per MQTT topic.
+![](./doc/images/stats.png)
+
 ## Command Interface
 
 Crow's Nest MQTT provides a command interface (likely accessible via a dedicated input field) for quick actions. Commands are typically prefixed with a colon (`:`). You can quickly access this input field using the `Ctrl + Shift + P` keyboard shortcut.

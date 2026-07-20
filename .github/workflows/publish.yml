@@ -193,9 +193,10 @@ jobs:
         cd ..
     
     - name: Create Release
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3
       if: github.ref_type == 'tag'
       with:
+        token: ${{ secrets.WINGET_PKGS_TOKEN }}
         generate_release_notes: true
         draft: true
         append_body: true

@@ -25,6 +25,7 @@ public partial class MainView : UserControl
 {
     private INotifyCollectionChanged? _observableHistory;
     private PublishWindow? _publishWindow;
+    private StatsWindow? _statsWindow;
     private IDisposable? _focusCommandSubscription; // Added for focus command
    private IDisposable? _focusTopicTreeSubscription; // Added for topic tree focus command
    private IDisposable? _gotFocusSubscription; // Added for window focus tracking
@@ -309,6 +310,7 @@ public partial class MainView : UserControl
            // Subscribe to ShowPublishWindowRequested to open the publish window
            vm.ShowPublishWindowRequested += OnShowPublishWindowRequested;
            vm.TogglePublishWindowRequested += OnTogglePublishWindowRequested;
+           vm.ShowStatsWindowRequested += OnShowStatsWindowRequested;
 
            // Subscribe to RawPayloadDocument changes to clear selection when empty
            _rawPayloadDocumentSubscription = vm.WhenAnyValue(x => x.RawPayloadDocument)
@@ -463,6 +465,7 @@ _parentWindow = null; // Clear window reference
         {
             oldVm.ShowPublishWindowRequested -= OnShowPublishWindowRequested;
             oldVm.TogglePublishWindowRequested -= OnTogglePublishWindowRequested;
+            oldVm.ShowStatsWindowRequested -= OnShowStatsWindowRequested;
         }
 
         // Close any open publish window
@@ -470,6 +473,12 @@ _parentWindow = null; // Clear window reference
         {
             _publishWindow.Close();
             _publishWindow = null;
+        }
+
+        if (_statsWindow != null)
+        {
+            _statsWindow.Close();
+            _statsWindow = null;
         }
 // _rawPayloadEditor reference is cleared implicitly when view is destroyed
 // Optional: Unsubscribe from PropertyChanged if you subscribed
@@ -550,5 +559,33 @@ _parentWindow = null; // Clear window reference
             _publishWindow.Show(ownerWindow);
         else
             _publishWindow.Show();
+    }
+
+    private void OnShowStatsWindowRequested(object? sender, EventArgs e)
+    {
+        if (_statsWindow is { IsVisible: true })
+        {
+            _statsWindow.Activate();
+            return;
+        }
+
+        ShowStatsWindowInternal();
+    }
+
+    private void ShowStatsWindowInternal()
+    {
+        if (DataContext is not MainViewModel vm) return;
+
+        var statsVm = vm.StatsViewModel;
+        if (statsVm == null) return;
+
+        _statsWindow = new StatsWindow { DataContext = statsVm };
+        _statsWindow.Closed += (_, _) => _statsWindow = null;
+
+        var ownerWindow = TopLevel.GetTopLevel(this) as Window;
+        if (ownerWindow != null)
+            _statsWindow.Show(ownerWindow);
+        else
+            _statsWindow.Show();
     }
 }

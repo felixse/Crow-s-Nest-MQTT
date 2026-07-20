@@ -11,8 +11,6 @@ using System.Text.Json; // Added for JsonValueKind
 using System.Reactive.Threading.Tasks;
 using CrowsNestMqtt.Utils;
 using System.IO;
-using LibVLCSharp.Shared;
-
 using Avalonia.Threading;
 
 namespace CrowsNestMqtt.UnitTests.ViewModels
@@ -48,6 +46,14 @@ namespace CrowsNestMqtt.UnitTests.ViewModels
            _mqttServiceMock = Substitute.For<IMqttService>();
            _statusBarServiceMock = Substitute.For<IStatusBarService>();
        }
+
+        [Fact]
+        public void Constructor_InTestMode_ShouldNotInitializeLibVlc()
+        {
+            using var viewModel = new MainViewModel(_commandParserService, _mqttServiceMock);
+
+            Assert.Null(viewModel.VlcMediaPlayer);
+        }
 
         [Fact]
         public void JsonViewer_WithValidJson_ShouldParseCorrectly()
@@ -210,26 +216,6 @@ namespace CrowsNestMqtt.UnitTests.ViewModels
             Assert.Equal(3, viewModel.JsonViewer.RootNodes[0].Children.Count);
        }
 
-        private sealed class MockLibVLC : LibVLC
-        {
-            public MockLibVLC() : base() { }
-        }
-
-        private sealed class MockMediaPlayer : MediaPlayer
-        {
-            public MockMediaPlayer(LibVLC libvlc) : base(libvlc) { }
-
-            public new static void Play()
-            {
-                // Do nothing
-            }
-
-            public new static void Stop()
-            {
-                // Do nothing
-            }
-        }
-
         [Fact(Timeout = 60000)]
         public Task VideoViewer_WithVideoPayload_ShouldDisplayCorrectly()
         {
@@ -250,11 +236,6 @@ namespace CrowsNestMqtt.UnitTests.ViewModels
 
             var testMessage = new MessageViewModel(messageId, topic, timestamp, "[video]", videoPayload.Length, _mqttServiceMock, _statusBarServiceMock, fullMessage);
 
-            // Mock LibVLC and MediaPlayer
-            var mockLibVLC = Substitute.For<LibVLC>();
-            var mockMediaPlayer = Substitute.For<MediaPlayer>(mockLibVLC);
-            viewModel.VlcMediaPlayer = mockMediaPlayer;
-
             // Act
             viewModel.SelectedMessage = testMessage;
 
@@ -265,11 +246,6 @@ namespace CrowsNestMqtt.UnitTests.ViewModels
             Assert.False(viewModel.IsRawTextViewerVisible);
             Assert.NotNull(viewModel.VideoPayload);
             Assert.Equal(videoPayload, viewModel.VideoPayload);
-
-            // Clean up
-            viewModel.VlcMediaPlayer = null;
-            mockLibVLC.Dispose();
-            mockMediaPlayer.Dispose();
 
             return Task.CompletedTask;
         }

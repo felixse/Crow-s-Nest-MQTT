@@ -12,6 +12,20 @@
             "projectPath": "${workspaceFolder}/src/MainApp/CrowsNestMqtt.App.csproj"
         },
         {
+            "name": "C#: Aspire AppHost (http)",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "dotnet",
+            "cwd": "${workspaceFolder}",
+            "args": [
+                "run",
+                "--project",
+                "${workspaceFolder}/src/AppHost/AppHost.csproj",
+                "--launch-profile",
+                "http"
+            ]
+        },
+        {
             "name": "Attach to .NET Process",
             "type": "coreclr",
             "request": "attach",

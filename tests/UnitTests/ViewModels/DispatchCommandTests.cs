@@ -424,4 +424,37 @@ public class DispatchCommandTests : IDisposable
         Assert.Equal("", _viewModel.CurrentSearchTerm);
         Assert.Contains("Search cleared", _viewModel.StatusBarText);
     }
+
+    [Fact]
+    public void DispatchCommand_Stats_ShouldRaiseShowStatsWindowRequested()
+    {
+        bool raised = false;
+        _viewModel.ShowStatsWindowRequested += (_, _) => raised = true;
+
+        Dispatch(CommandType.Stats);
+
+        Assert.True(raised, "Expected ShowStatsWindowRequested event to fire on :stats dispatch.");
+    }
+
+    [Fact]
+    public void DispatchCommand_Stats_ShouldLazilyCreateStatsViewModel()
+    {
+        Assert.Null(_viewModel.StatsViewModel);
+
+        Dispatch(CommandType.Stats);
+
+        Assert.NotNull(_viewModel.StatsViewModel);
+    }
+
+    [Fact]
+    public void DispatchCommand_Clear_ShouldResetStatisticsAggregates()
+    {
+        // Seed via the service so we don't need to run a full MQTT batch.
+        _viewModel.TopicStatisticsService.Record("a/b", 100, DateTime.UtcNow);
+        Assert.NotEmpty(_viewModel.TopicStatisticsService.Snapshot());
+
+        Dispatch(CommandType.Clear);
+
+        Assert.Empty(_viewModel.TopicStatisticsService.Snapshot());
+    }
 }

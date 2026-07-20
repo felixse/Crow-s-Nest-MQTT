@@ -356,6 +356,38 @@ public class CommandParserServiceTests
         Assert.Null(result.ParsedCommand);
     }
 
+    // --- :stats ---
+    [Fact]
+    public void ParseCommand_Stats_NoArgs_Succeeds()
+    {
+        var result = CommandParserService.ParseCommand(":stats", _settings);
+
+        Assert.True(result.IsSuccess, result.ErrorMessage);
+        Assert.NotNull(result.ParsedCommand);
+        Assert.Equal(CommandType.Stats, result.ParsedCommand.Type);
+        Assert.Empty(result.ParsedCommand.Arguments);
+    }
+
+    [Fact]
+    public void ParseCommand_Stats_UppercaseIsCaseInsensitive()
+    {
+        var result = CommandParserService.ParseCommand(":STATS", _settings);
+
+        Assert.True(result.IsSuccess, result.ErrorMessage);
+        Assert.NotNull(result.ParsedCommand);
+        Assert.Equal(CommandType.Stats, result.ParsedCommand.Type);
+    }
+
+    [Fact]
+    public void ParseCommand_Stats_WithArgs_ReturnsFailure()
+    {
+        var result = CommandParserService.ParseCommand(":stats extra", _settings);
+
+        Assert.False(result.IsSuccess);
+        Assert.Null(result.ParsedCommand);
+        Assert.Contains("stats", result.ErrorMessage!, StringComparison.OrdinalIgnoreCase);
+    }
+
     // --- :setsubscription ---
     [Theory]
     [InlineData(":setsubscription sensors/#", "sensors/#")]

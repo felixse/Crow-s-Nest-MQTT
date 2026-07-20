@@ -176,6 +176,9 @@ Once the response message is received (first message send to given response topi
 
 Messages with MQTT V5 `message-expiry-interval` are visually marked when they expire: the message history shows them with strikethrough text and dimmed foreground, while the metadata view displays a yellow warning triangle icon next to the expiry field with the "EXPIRED" status.
 
+Using the `:stats` commands opens a non modal dialog, that shows MQTT message statistics per MQTT topic.
+![](./doc/images/stats.png)
+
 ## Command Interface
 
 Crow's Nest MQTT provides a command interface (likely accessible via a dedicated input field) for quick actions. Commands are typically prefixed with a colon (`:`). You can quickly access this input field using the `Ctrl + Shift + P` keyboard shortcut.
@@ -208,6 +211,7 @@ Crow's Nest MQTT provides a command interface (likely accessible via a dedicated
 *   `:azurewhoami` - Print the identity (`upn`, `oid`, `name`, `appid`, `tenant`) that `DefaultAzureCredential` will use for Azure Event Grid. Use the values it prints to configure the `authenticationName` on the Event Grid Client resource.
 *   `:setusetls <true|false>` - Set whether to use TLS for the MQTT connection. When set to `true`, the client will connect using TLS, allow untrusted certificates, and ignore certificate errors.
 *   `:publish [topic] [@file|text]` - Open the publish window. Optionally pre-fill the topic (defaults to the selected topic) and payload from a file (`@path/to/file`) or inline text. The publish window is non-modal and supports all MQTT V5 properties.
+*   `:stats` - Open a non-modal window showing per-topic statistics (message count, total payload size, average payload size, mean time between messages) for every topic that has received a message. The counters are lifetime totals — they are not affected by ring-buffer eviction and only reset on `:clear`. The table is sortable, updates once per second, and can be copied as a GitHub-flavored Markdown table via the *Copy as Markdown* button (or `Ctrl+C`).
 *   `[search_term]` - Any text entered without a `:` prefix is treated as a search term to filter messages.
 
 ## Keyboard Navigation Shortcuts

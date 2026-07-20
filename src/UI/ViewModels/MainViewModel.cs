@@ -787,9 +787,11 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
             ?? (scope => new AzureAccessTokenProvider(scope)); // Real DefaultAzureCredential-backed provider in prod
         _uiScheduler = uiScheduler 
             ?? (Application.Current == null ? Scheduler.Immediate : RxSchedulers.MainThreadScheduler); // Use Immediate in non-Avalonia (plain unit test) context
+        var entryAssemblyName = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Name;
         _testMode = Application.Current == null
                     || AppDomain.CurrentDomain.FriendlyName?.IndexOf("testhost", StringComparison.OrdinalIgnoreCase) >= 0
                     || AppDomain.CurrentDomain.FriendlyName?.IndexOf("vstest", StringComparison.OrdinalIgnoreCase) >= 0
+                    || entryAssemblyName?.Contains("Tests", StringComparison.OrdinalIgnoreCase) == true
                     || Environment.GetEnvironmentVariable("CI") == "true"
                     || uiScheduler == Scheduler.Immediate; // If ImmediateScheduler is injected, we're definitely in test mode
         _syncContext = SynchronizationContext.Current; // Capture sync context
@@ -839,22 +841,27 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
             _rawPayloadDocument = new TextDocument();
         }
 
-        // Initialize LibVLC with error handling for test environments
-        try
+        if (_testMode)
         {
-            Core.Initialize();
-            _libVLC = new LibVLC();
-            _vlcMediaPlayer = new MediaPlayer(_libVLC);
-            VlcMediaPlayer = _vlcMediaPlayer;
-        }
-        catch (VLCException ex)
-        {
-            // LibVLC initialization failed (likely in test environment)
-            // Log the error but continue without video functionality
-            AppLogger.Warning($"LibVLC initialization failed: {ex.Message}. Video playback will not be available.");
             _libVLC = null;
             _vlcMediaPlayer = null;
-            VlcMediaPlayer = null;
+        }
+        else
+        {
+            try
+            {
+                Core.Initialize();
+                _libVLC = new LibVLC();
+                _vlcMediaPlayer = new MediaPlayer(_libVLC);
+                VlcMediaPlayer = _vlcMediaPlayer;
+            }
+            catch (VLCException ex)
+            {
+                AppLogger.Warning($"LibVLC initialization failed: {ex.Message}. Video playback will not be available.");
+                _libVLC = null;
+                _vlcMediaPlayer = null;
+                VlcMediaPlayer = null;
+            }
         }
 
         // Populate the list of available commands (using the help dictionary keys)

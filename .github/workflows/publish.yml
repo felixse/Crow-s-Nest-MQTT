@@ -219,19 +219,3 @@ jobs:
           repository: koepalex/homebrew-crowsnest
           event-type: bump-cask
           client-payload: '{"version": "${{ needs.determine_version.outputs.semVer }}"}'
-
-  bump_winget:
-    name: Bump Winget Manifest
-    runs-on: ubuntu-latest
-    needs:
-      - determine_version
-      - release
-    if: github.ref_type == 'tag'
-    steps:
-      - name: Trigger winget-pkgs manifest update
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.WINGET_PKGS_TOKEN }}
-          repository: koepalex/winget-pkgs
-          event-type: bump-winget
-          client-payload: '{"version": "${{ needs.determine_version.outputs.semVer }}"}'

@@ -9,7 +9,7 @@ dotnet build CrowsNestMQTT.slnx --configuration Release
 
 ### Run All Tests
 ```powershell
-dotnet test --configuration Release --collect:"XPlat Code Coverage" --settings coverlet.runsettings --filter "Category!=LocalOnly"
+dotnet test --configuration Release --filter "Category!=LocalOnly&Category!=RequiresMqttBroker"
 ```
 
 ### Run Single Test Project
@@ -36,9 +36,10 @@ dotnet test tests/UnitTests/UnitTests.csproj --filter "ClassName.TestMethodName"
 
 ### Generate Coverage Report
 ```powershell
-dotnet test --no-build --configuration Release --collect:"XPlat Code Coverage" --settings coverlet.runsettings --results-directory ./TestResults
-dotnet tool install -g dotnet-reportgenerator-globaltool
-reportgenerator -reports:"./TestResults/**/coverage.cobertura.xml" -targetdir:"./TestResults/CoverageReport" -reporttypes:"Html;Cobertura;JsonSummary"
+dotnet tool install -g dotnet-coverage --version 18.9.0
+dotnet tool install -g dotnet-reportgenerator-globaltool --version 5.5.10
+dotnet-coverage collect --settings ./codecoverage.config.xml --output ./TestResults/coverage.cobertura.xml --output-format cobertura -- dotnet test --no-build --configuration Release --filter "Category!=LocalOnly&Category!=RequiresMqttBroker" --results-directory ./TestResults
+reportgenerator -reports:"./TestResults/coverage.cobertura.xml" -targetdir:"./TestResults/CoverageReport" -reporttypes:"Html;Cobertura;JsonSummary"
 ```
 
 ### Restore Dependencies

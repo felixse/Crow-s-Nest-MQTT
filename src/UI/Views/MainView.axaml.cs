@@ -27,6 +27,7 @@ public partial class MainView : UserControl
 {
     private INotifyCollectionChanged? _observableHistory;
     private PublishWindow? _publishWindow;
+    private StatsWindow? _statsWindow;
     private IDisposable? _focusCommandSubscription; // Added for focus command
    private IDisposable? _focusTopicTreeSubscription; // Added for topic tree focus command
    private IDisposable? _gotFocusSubscription; // Added for window focus tracking
@@ -368,6 +369,7 @@ public partial class MainView : UserControl
            // Subscribe to ShowPublishWindowRequested to open the publish window
            vm.ShowPublishWindowRequested += OnShowPublishWindowRequested;
            vm.TogglePublishWindowRequested += OnTogglePublishWindowRequested;
+           vm.ShowStatsWindowRequested += OnShowStatsWindowRequested;
 
            // Subscribe to RawPayloadDocument changes to clear selection when empty
            _rawPayloadDocumentSubscription = vm.WhenAnyValue(x => x.RawPayloadDocument)
@@ -414,8 +416,12 @@ public partial class MainView : UserControl
             return;
         }
 
-        // Check if shortcuts should be suppressed (e.g., command palette has focus)
-        if (vm.KeyboardNavigationService.ShouldSuppressShortcuts())
+        // Suppress j/k/n shortcuts when any text input has focus. The service's
+        // built-in check only handles the command palette; extend it here so
+        // typing 'k' into the Client ID field (or any other TextBox/NumericUpDown)
+        // reaches the control instead of triggering vim-style navigation.
+        if (vm.KeyboardNavigationService.ShouldSuppressShortcuts()
+            || IsTextInputFocused())
         {
             return;
         }
@@ -454,6 +460,35 @@ public partial class MainView : UserControl
                     }
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Returns true when the currently-focused Avalonia element is a text-input
+    /// control that should absorb keystrokes rather than trigger vim-style
+    /// navigation. This is what stops <c>k</c> from being swallowed while the
+    /// user types into e.g. the Client ID textbox.
+    /// </summary>
+    private bool IsTextInputFocused()
+    {
+        try
+        {
+            var topLevel = TopLevel.GetTopLevel(this);
+            var focused = topLevel?.FocusManager?.GetFocusedElement();
+            return focused switch
+            {
+                null => false,
+                TextBox => true,   // covers MaskedTextBox and any derived text boxes
+                AutoCompleteBox => true,
+                NumericUpDown => true,
+                // AvaloniaEdit's TextArea (used by the payload viewer + publish editor)
+                AvaloniaEdit.Editing.TextArea => true,
+                _ => false,
+            };
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -496,6 +531,7 @@ _parentWindow = null; // Clear window reference
         {
             oldVm.ShowPublishWindowRequested -= OnShowPublishWindowRequested;
             oldVm.TogglePublishWindowRequested -= OnTogglePublishWindowRequested;
+            oldVm.ShowStatsWindowRequested -= OnShowStatsWindowRequested;
         }
 
         // Close any open publish window
@@ -504,6 +540,13 @@ _parentWindow = null; // Clear window reference
             _publishWindow.Close();
             _publishWindow = null;
         }
+
+        if (_statsWindow != null)
+        {
+            _statsWindow.Close();
+            _statsWindow = null;
+        }
+// _rawPayloadEditor reference is cleared implicitly when view is destroyed
 // Optional: Unsubscribe from PropertyChanged if you subscribed
 // if (DataContext is MainViewModel oldVm)
 // {
@@ -582,5 +625,33 @@ _parentWindow = null; // Clear window reference
             _publishWindow.Show(ownerWindow);
         else
             _publishWindow.Show();
+    }
+
+    private void OnShowStatsWindowRequested(object? sender, EventArgs e)
+    {
+        if (_statsWindow is { IsVisible: true })
+        {
+            _statsWindow.Activate();
+            return;
+        }
+
+        ShowStatsWindowInternal();
+    }
+
+    private void ShowStatsWindowInternal()
+    {
+        if (DataContext is not MainViewModel vm) return;
+
+        var statsVm = vm.StatsViewModel;
+        if (statsVm == null) return;
+
+        _statsWindow = new StatsWindow { DataContext = statsVm };
+        _statsWindow.Closed += (_, _) => _statsWindow = null;
+
+        var ownerWindow = TopLevel.GetTopLevel(this) as Window;
+        if (ownerWindow != null)
+            _statsWindow.Show(ownerWindow);
+        else
+            _statsWindow.Show();
     }
 }

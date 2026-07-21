@@ -14,8 +14,7 @@ using CrowsNestMqtt.Utils;
 public sealed record EnvironmentSettingsOverrides
 {
     private const string Prefix = "CROWSNEST__";
-    private const string AspireDefaultEnvVar = "services__mqtt__default__0";
-    private const string AspireMqttEnvVar = "services__mqtt__mqtt__0";
+    private const string AspireServicePrefix = "services__mqtt__";
 
     public string? Hostname { get; init; }
     public int? Port { get; init; }
@@ -33,6 +32,8 @@ public sealed record EnvironmentSettingsOverrides
     public int? TimeoutPeriodSeconds { get; init; }
     public long? DefaultTopicBufferSizeBytes { get; init; }
     public IList<TopicBufferLimit>? TopicSpecificBufferLimits { get; init; }
+    public TransportProtocol? Transport { get; init; }
+    public string? WebSocketPath { get; init; }
 
     /// <summary>
     /// Whether any environment variable overrides were detected.
@@ -53,17 +54,23 @@ public sealed record EnvironmentSettingsOverrides
         string? hostname = null;
         int? port = null;
         bool isAspire = false;
+        TransportProtocol? transport = null;
+        bool? useTlsFromUri = null;
+        string? webSocketPath = null;
 
         // Check Aspire endpoint env vars (lower priority than explicit CROWSNEST__ vars)
-        var aspireEndpoint = Environment.GetEnvironmentVariable(AspireMqttEnvVar)
-                          ?? Environment.GetEnvironmentVariable(AspireDefaultEnvVar);
+        // Aspire sets services__mqtt__<endpoint-name>__0 for each referenced endpoint
+        var aspireEndpoint = FindAspireEndpointVar();
 
         if (!string.IsNullOrEmpty(aspireEndpoint))
         {
             isAspire = true;
-            var (aspireHost, aspirePort) = ParseMqttUri(aspireEndpoint);
-            hostname = aspireHost;
-            port = aspirePort;
+            var parsed = ParseMqttUri(aspireEndpoint);
+            hostname = parsed.hostname;
+            port = parsed.port;
+            transport = parsed.transport;
+            useTlsFromUri = parsed.useTls;
+            webSocketPath = parsed.webSocketPath;
         }
 
         // Read individual CROWSNEST__ env vars (these override Aspire values)
@@ -83,20 +90,28 @@ public sealed record EnvironmentSettingsOverrides
         var defaultBufferSize = ReadLong("DEFAULT_BUFFER_SIZE_BYTES");
         var topicLimits = ReadTopicBufferLimits("TOPIC_BUFFER_LIMITS");
         var authMode = ReadAuthMode();
+        var envTransport = ReadTransport("TRANSPORT");
+        var envWebSocketPath = ReadString("WEBSOCKET_PATH");
 
         // Explicit CROWSNEST__ hostname/port override Aspire-derived values
         if (envHostname != null) hostname = envHostname;
         if (envPort.HasValue) port = envPort;
+        if (envTransport.HasValue) transport = envTransport;
+        if (envWebSocketPath != null) webSocketPath = envWebSocketPath;
+
+        // Explicit USE_TLS overrides URI-derived value
+        var finalUseTls = useTls ?? useTlsFromUri;
 
         bool hasAny = isAspire
             || envHostname != null || envPort.HasValue
             || clientId != null || keepAlive.HasValue
             || cleanSession.HasValue || sessionExpiry.HasValue
-            || useTls.HasValue || subscriptionQoS.HasValue
+            || finalUseTls.HasValue || subscriptionQoS.HasValue
             || exportFormat.HasValue || exportPath != null
             || maxTopicLimit.HasValue || parallelismDegree.HasValue
             || timeoutSeconds.HasValue || defaultBufferSize.HasValue
-            || topicLimits != null || authMode != null;
+            || topicLimits != null || authMode != null
+            || transport.HasValue || webSocketPath != null;
 
         if (hasAny)
         {
@@ -112,7 +127,7 @@ public sealed record EnvironmentSettingsOverrides
             CleanSession = cleanSession,
             SessionExpiryIntervalSeconds = sessionExpiry,
             AuthMode = authMode,
-            UseTls = useTls,
+            UseTls = finalUseTls,
             SubscriptionQoS = subscriptionQoS,
             ExportFormat = exportFormat,
             ExportPath = exportPath,
@@ -121,19 +136,39 @@ public sealed record EnvironmentSettingsOverrides
             TimeoutPeriodSeconds = timeoutSeconds,
             DefaultTopicBufferSizeBytes = defaultBufferSize,
             TopicSpecificBufferLimits = topicLimits,
+            Transport = transport,
+            WebSocketPath = webSocketPath,
             HasOverrides = hasAny,
             IsAspireEnvironment = isAspire
         };
     }
 
-    internal static (string? hostname, int? port) ParseMqttUri(string connectionString)
+    internal static (string? hostname, int? port, TransportProtocol? transport, bool? useTls, string? webSocketPath) ParseMqttUri(string connectionString)
     {
         try
         {
             var uri = new Uri(connectionString);
             if (!string.IsNullOrEmpty(uri.Host) && uri.Port > 0)
             {
-                return (uri.Host, uri.Port);
+                var scheme = uri.Scheme.ToLowerInvariant();
+                TransportProtocol? transport = scheme switch
+                {
+                    "ws" or "wss" => TransportProtocol.WebSocket,
+                    "mqtt" or "mqtts" or "tcp" => TransportProtocol.Tcp,
+                    _ => null
+                };
+                bool? useTls = scheme switch
+                {
+                    "wss" or "mqtts" => true,
+                    "ws" or "mqtt" or "tcp" => false,
+                    _ => null
+                };
+                // Extract WebSocket path (use null if root or empty)
+                string? wsPath = transport == TransportProtocol.WebSocket && uri.AbsolutePath != "/"
+                    ? uri.AbsolutePath
+                    : null;
+
+                return (uri.Host, uri.Port, transport, useTls, wsPath);
             }
         }
         catch (UriFormatException ex)
@@ -141,7 +176,7 @@ public sealed record EnvironmentSettingsOverrides
             AppLogger.Error(ex, "Invalid URI format for MQTT connection string: {ConnectionString}", connectionString);
         }
 
-        return (null, null);
+        return (null, null, null, null, null);
     }
 
     private static AuthenticationMode? ReadAuthMode()
@@ -158,6 +193,7 @@ public sealed record EnvironmentSettingsOverrides
             "enhanced" => new EnhancedAuthenticationMode(
                 ReadString("AUTH_METHOD"),
                 ReadString("AUTH_DATA")),
+            "azure" => new AzureAuthenticationMode(ReadString("AUTH_SCOPE")),
             _ => null
         };
     }
@@ -230,5 +266,42 @@ public sealed record EnvironmentSettingsOverrides
             AppLogger.Error(ex, "Failed to parse {EnvVar} environment variable as JSON", Prefix + name);
             return null;
         }
+    }
+
+    private static TransportProtocol? ReadTransport(string name)
+    {
+        var value = ReadString(name);
+        if (value != null && Enum.TryParse<TransportProtocol>(value, ignoreCase: true, out var result))
+            return result;
+        return null;
+    }
+
+    /// <summary>
+    /// Finds the first Aspire service endpoint env var matching services__mqtt__*__0.
+    /// Aspire sets these based on the endpoint name (e.g., services__mqtt__mqtt__0, services__mqtt__ws__0).
+    /// Prefers "mqtt" endpoint, then "default", then any other.
+    /// </summary>
+    private static string? FindAspireEndpointVar()
+    {
+        // Check well-known names first for deterministic priority
+        var mqtt = Environment.GetEnvironmentVariable(AspireServicePrefix + "mqtt__0");
+        if (!string.IsNullOrEmpty(mqtt)) return mqtt;
+
+        var defaultVar = Environment.GetEnvironmentVariable(AspireServicePrefix + "default__0");
+        if (!string.IsNullOrEmpty(defaultVar)) return defaultVar;
+
+        // Fall back to scanning for any services__mqtt__*__0 pattern
+        var envVars = Environment.GetEnvironmentVariables();
+        foreach (System.Collections.DictionaryEntry entry in envVars)
+        {
+            var key = entry.Key?.ToString();
+            if (key != null
+                && key.StartsWith(AspireServicePrefix, StringComparison.OrdinalIgnoreCase)
+                && key.EndsWith("__0", StringComparison.Ordinal))
+            {
+                return entry.Value?.ToString();
+            }
+        }
+        return null;
     }
 }

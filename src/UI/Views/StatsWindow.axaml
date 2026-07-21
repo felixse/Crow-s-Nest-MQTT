@@ -1,0 +1,64 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:CrowsNestMqtt.UI.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="500"
+        x:Class="CrowsNestMqtt.UI.Views.StatsWindow"
+        x:DataType="vm:StatsViewModel"
+        x:CompileBindings="False"
+        Title="Topic Statistics"
+        Width="820" Height="520"
+        MinWidth="500" MinHeight="300"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner">
+
+  <Window.KeyBindings>
+    <KeyBinding Gesture="Escape" Command="{Binding CloseCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
+    <KeyBinding Gesture="F5" Command="{Binding RefreshCommand}" />
+    <KeyBinding Gesture="Ctrl+C" Command="{Binding CopyAsMarkdownCommand}" />
+  </Window.KeyBindings>
+
+  <DockPanel Margin="12">
+
+    <!-- Status bar at the bottom -->
+    <Border DockPanel.Dock="Bottom" Margin="0,8,0,0"
+            Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+            CornerRadius="4" Padding="8,4">
+      <TextBlock Text="{Binding StatusText}" FontSize="12" Opacity="0.85" />
+    </Border>
+
+    <!-- Action buttons -->
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                HorizontalAlignment="Right" Spacing="8" Margin="0,8,0,0">
+      <Button Content="Refresh" Command="{Binding RefreshCommand}" ToolTip.Tip="Refresh now (F5)" />
+      <Button Content="Copy as Markdown" Command="{Binding CopyAsMarkdownCommand}"
+              Classes="accent" FontWeight="Bold" ToolTip.Tip="Ctrl+C" />
+    </StackPanel>
+
+    <!-- Header -->
+    <TextBlock DockPanel.Dock="Top" Text="Per-topic statistics (lifetime totals, updated every second)"
+               FontSize="13" Opacity="0.85" Margin="0,0,0,8" />
+
+    <!-- Stats table -->
+    <DataGrid Name="StatsGrid"
+              ItemsSource="{Binding Rows}"
+              AutoGenerateColumns="False"
+              CanUserSortColumns="True"
+              CanUserResizeColumns="True"
+              CanUserReorderColumns="True"
+              GridLinesVisibility="Horizontal"
+              IsReadOnly="True"
+              SelectionMode="Extended"
+              HeadersVisibility="Column">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="Topic"          Binding="{Binding Topic}"                Width="*"  />
+        <DataGridTextColumn Header="# Messages"     Binding="{Binding MessageCount}"         Width="120" />
+        <DataGridTextColumn Header="Total Size"     Binding="{Binding TotalPayloadDisplay}"  SortMemberPath="TotalPayloadBytes"   Width="130" />
+        <DataGridTextColumn Header="Avg Size"       Binding="{Binding AveragePayloadDisplay}" SortMemberPath="AveragePayloadBytes" Width="120" />
+        <DataGridTextColumn Header="Mean Interval"  Binding="{Binding MeanIntervalDisplay}"  SortMemberPath="MeanIntervalSortKey" Width="140" />
+      </DataGrid.Columns>
+    </DataGrid>
+
+  </DockPanel>
+</Window>

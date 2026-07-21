@@ -39,6 +39,13 @@
             </ui:FASettingsExpander.Footer>
         </ui:FASettingsExpander>
 
+        <!--  Subscription Topic  -->
+        <ui:FASettingsExpander Description="Wildcard '#' works for open brokers (EMQX/Mosquitto). Azure Event Grid requires a filter that matches your Topic Space template (e.g. 'sensors/#' or 'devices/+/telemetry')." Header="Subscription Topic">
+            <ui:FASettingsExpander.Footer>
+                <TextBox MinWidth="220" PlaceholderText="#" Text="{Binding Settings.SubscriptionTopic, Mode=TwoWay}" />
+            </ui:FASettingsExpander.Footer>
+        </ui:FASettingsExpander>
+
         <!--  Show Connection Dialog on Launch  -->
         <ui:FASettingsExpander Description="Show the connection dialog when the application starts" Header="Show Connection Dialog on Launch">
             <ui:FASettingsExpander.Footer>

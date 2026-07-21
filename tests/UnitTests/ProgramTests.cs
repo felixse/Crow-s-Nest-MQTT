@@ -164,6 +164,49 @@ namespace CrowsNestMqtt.UnitTests
         }
 
         [Fact]
+        public void EnvironmentSettingsOverrides_ParsesAzureAuthMode()
+        {
+            try
+            {
+                Environment.SetEnvironmentVariable("CROWSNEST__AUTH_MODE", "azure");
+                Environment.SetEnvironmentVariable("CROWSNEST__AUTH_SCOPE", "api://custom/.default");
+
+                var result = EnvironmentSettingsOverrides.Load();
+
+                Assert.True(result.HasOverrides);
+                Assert.IsType<AzureAuthenticationMode>(result.AuthMode);
+                Assert.Equal("api://custom/.default", ((AzureAuthenticationMode)result.AuthMode!).Scope);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("CROWSNEST__AUTH_MODE", null);
+                Environment.SetEnvironmentVariable("CROWSNEST__AUTH_SCOPE", null);
+            }
+        }
+
+        [Fact]
+        public void EnvironmentSettingsOverrides_ParsesAzureAuthMode_DefaultScopeWhenAbsent()
+        {
+            try
+            {
+                Environment.SetEnvironmentVariable("CROWSNEST__AUTH_MODE", "azure");
+                // Intentionally not setting CROWSNEST__AUTH_SCOPE
+
+                var result = EnvironmentSettingsOverrides.Load();
+
+                Assert.True(result.HasOverrides);
+                var azure = Assert.IsType<AzureAuthenticationMode>(result.AuthMode);
+                Assert.Null(azure.Scope);
+                Assert.Equal(AzureAuthenticationMode.DefaultScope, azure.EffectiveScope);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("CROWSNEST__AUTH_MODE", null);
+                Environment.SetEnvironmentVariable("CROWSNEST__AUTH_SCOPE", null);
+            }
+        }
+
+        [Fact]
         public void EnvironmentSettingsOverrides_ParsesAllCrowsnestVars()
         {
             // Arrange
@@ -218,25 +261,154 @@ namespace CrowsNestMqtt.UnitTests
         [Fact]
         public void ParseMqttUri_ValidUri_ReturnsHostAndPort()
         {
-            var (host, port) = EnvironmentSettingsOverrides.ParseMqttUri("mqtt://localhost:41883");
+            var (host, port, transport, useTls, wsPath) = EnvironmentSettingsOverrides.ParseMqttUri("mqtt://localhost:41883");
             Assert.Equal("localhost", host);
             Assert.Equal(41883, port);
+            Assert.Equal(TransportProtocol.Tcp, transport);
+            Assert.Equal(false, useTls);
+            Assert.Null(wsPath);
         }
 
         [Fact]
         public void ParseMqttUri_EmptyHost_ReturnsNull()
         {
-            var (host, port) = EnvironmentSettingsOverrides.ParseMqttUri("mqtt://:1883");
+            var (host, port, transport, useTls, wsPath) = EnvironmentSettingsOverrides.ParseMqttUri("mqtt://:1883");
             Assert.Null(host);
             Assert.Null(port);
+            Assert.Null(transport);
+            Assert.Null(useTls);
+            Assert.Null(wsPath);
         }
 
         [Fact]
         public void ParseMqttUri_InvalidUri_ReturnsNull()
         {
-            var (host, port) = EnvironmentSettingsOverrides.ParseMqttUri("not a uri at all");
+            var (host, port, transport, useTls, wsPath) = EnvironmentSettingsOverrides.ParseMqttUri("not a uri at all");
             Assert.Null(host);
             Assert.Null(port);
+            Assert.Null(transport);
+            Assert.Null(useTls);
+            Assert.Null(wsPath);
+        }
+
+        [Fact]
+        public void ParseMqttUri_WebSocketUri_ReturnsWebSocketTransport()
+        {
+            var (host, port, transport, useTls, wsPath) = EnvironmentSettingsOverrides.ParseMqttUri("ws://broker.example.com:8083/mqtt");
+            Assert.Equal("broker.example.com", host);
+            Assert.Equal(8083, port);
+            Assert.Equal(TransportProtocol.WebSocket, transport);
+            Assert.Equal(false, useTls);
+            Assert.Equal("/mqtt", wsPath);
+        }
+
+        [Fact]
+        public void ParseMqttUri_SecureWebSocketUri_ReturnsTlsEnabled()
+        {
+            var (host, port, transport, useTls, wsPath) = EnvironmentSettingsOverrides.ParseMqttUri("wss://secure.broker.io:8084/mqtt");
+            Assert.Equal("secure.broker.io", host);
+            Assert.Equal(8084, port);
+            Assert.Equal(TransportProtocol.WebSocket, transport);
+            Assert.Equal(true, useTls);
+            Assert.Equal("/mqtt", wsPath);
+        }
+
+        [Fact]
+        public void ParseMqttUri_WebSocketUriWithRootPath_ReturnsNullPath()
+        {
+            var (host, port, transport, useTls, wsPath) = EnvironmentSettingsOverrides.ParseMqttUri("ws://broker.local:8083/");
+            Assert.Equal("broker.local", host);
+            Assert.Equal(8083, port);
+            Assert.Equal(TransportProtocol.WebSocket, transport);
+            Assert.Equal(false, useTls);
+            Assert.Null(wsPath);
+        }
+
+        [Fact]
+        public void EnvironmentSettingsOverrides_ParsesWebSocketAspireEndpoint()
+        {
+            try
+            {
+                Environment.SetEnvironmentVariable("services__mqtt__default__0", "ws://ws.broker:8083/mqtt");
+
+                var result = EnvironmentSettingsOverrides.Load();
+
+                Assert.True(result.HasOverrides);
+                Assert.True(result.IsAspireEnvironment);
+                Assert.Equal("ws.broker", result.Hostname);
+                Assert.Equal(8083, result.Port);
+                Assert.Equal(TransportProtocol.WebSocket, result.Transport);
+                Assert.Equal(false, result.UseTls);
+                Assert.Equal("/mqtt", result.WebSocketPath);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("services__mqtt__default__0", null);
+            }
+        }
+
+        [Fact]
+        public void EnvironmentSettingsOverrides_TransportEnvVarOverridesAspireScheme()
+        {
+            try
+            {
+                Environment.SetEnvironmentVariable("services__mqtt__default__0", "mqtt://broker:1883");
+                Environment.SetEnvironmentVariable("CROWSNEST__TRANSPORT", "WebSocket");
+                Environment.SetEnvironmentVariable("CROWSNEST__WEBSOCKET_PATH", "/ws");
+
+                var result = EnvironmentSettingsOverrides.Load();
+
+                Assert.Equal(TransportProtocol.WebSocket, result.Transport);
+                Assert.Equal("/ws", result.WebSocketPath);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("services__mqtt__default__0", null);
+                Environment.SetEnvironmentVariable("CROWSNEST__TRANSPORT", null);
+                Environment.SetEnvironmentVariable("CROWSNEST__WEBSOCKET_PATH", null);
+            }
+        }
+
+        [Fact]
+        public void EnvironmentSettingsOverrides_DetectsWsEndpointName()
+        {
+            // Aspire sets services__mqtt__ws__0 when referencing a "ws" named endpoint
+            try
+            {
+                Environment.SetEnvironmentVariable("services__mqtt__ws__0", "ws://ws.host:8083/mqtt");
+
+                var result = EnvironmentSettingsOverrides.Load();
+
+                Assert.True(result.IsAspireEnvironment);
+                Assert.Equal("ws.host", result.Hostname);
+                Assert.Equal(8083, result.Port);
+                Assert.Equal(TransportProtocol.WebSocket, result.Transport);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("services__mqtt__ws__0", null);
+            }
+        }
+
+        [Fact]
+        public void EnvironmentSettingsOverrides_DetectsMqttsEndpointName()
+        {
+            // Aspire sets services__mqtt__mqtts__0 when referencing a "mqtts" named endpoint
+            try
+            {
+                Environment.SetEnvironmentVariable("services__mqtt__mqtts__0", "tcp://tls.host:8883");
+
+                var result = EnvironmentSettingsOverrides.Load();
+
+                Assert.True(result.IsAspireEnvironment);
+                Assert.Equal("tls.host", result.Hostname);
+                Assert.Equal(8883, result.Port);
+                Assert.Equal(TransportProtocol.Tcp, result.Transport);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("services__mqtt__mqtts__0", null);
+            }
         }
 
         [Fact]

@@ -4,5 +4,9 @@
   <Project Path="src/UI/UI.csproj" />
   <Project Path="src/Utils/Utils.csproj" />
   <Project Path="src/AppHost/AppHost.csproj" />
+  <Project Path="tools/MockAzureEventGridBroker/MockAzureEventGridBroker.csproj" />
   <Project Path="tests/UnitTests/UnitTests.csproj" />
+  <Project Path="tests/integration/Integration.Tests.csproj" />
+  <Project Path="tests/AppHost.Tests/AppHost.Tests.csproj" />
+  <Project Path="tests/MockBroker.Tests/MockBroker.Tests.csproj" />
 </Solution>

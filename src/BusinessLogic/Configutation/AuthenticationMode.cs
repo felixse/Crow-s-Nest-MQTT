@@ -9,6 +9,7 @@ using System.Text.Json.Serialization;
 [JsonDerivedType(typeof(AnonymousAuthenticationMode), typeDiscriminator: "anonymous")]
 [JsonDerivedType(typeof(UsernamePasswordAuthenticationMode), typeDiscriminator: "userpass")]
 [JsonDerivedType(typeof(EnhancedAuthenticationMode), typeDiscriminator: "enhanced")]
+[JsonDerivedType(typeof(AzureAuthenticationMode), typeDiscriminator: "azure")]
 public abstract record AuthenticationMode;
 
 /// <summary>

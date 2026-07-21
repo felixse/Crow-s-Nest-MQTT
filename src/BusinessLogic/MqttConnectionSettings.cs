@@ -25,9 +25,25 @@ public class MqttConnectionSettings
     public AuthenticationMode AuthMode { get; set; } = new AnonymousAuthenticationMode();
     public bool UseTls { get; set; } = false;
     /// <summary>
+    /// Transport protocol to use for the MQTT connection. Default is TCP.
+    /// </summary>
+    public TransportProtocol Transport { get; set; } = TransportProtocol.Tcp;
+    /// <summary>
+    /// WebSocket path when using WebSocket transport. Defaults to "/mqtt" if not specified.
+    /// Only used when <see cref="Transport"/> is <see cref="TransportProtocol.WebSocket"/>.
+    /// </summary>
+    public string? WebSocketPath { get; set; }
+    /// <summary>
     /// QoS level for the wildcard subscription. Default is 1 (AtLeastOnce).
     /// Set to 2 (ExactlyOnce) if you need to receive QoS 2 messages without downgrade.
     /// Higher QoS reduces maximum message throughput.
     /// </summary>
     public int SubscriptionQoS { get; set; } = 1;
+    /// <summary>
+    /// MQTT topic filter used for the client's single startup subscription.
+    /// Defaults to <c>#</c> (all topics) which works for permissive brokers like EMQX
+    /// or Mosquitto. Azure Event Grid namespaces reject <c>#</c> — set this to a
+    /// filter that fits inside your Topic Space template (e.g. <c>sensors/#</c>).
+    /// </summary>
+    public string SubscriptionTopic { get; set; } = "#";
 }

@@ -4,7 +4,9 @@ using CrowsNestMqtt.BusinessLogic.Services;
 using CrowsNestMqtt.UI.ViewModels;
 using NSubstitute;
 using MQTTnet;
+using System;
 using System.Buffers;
+using System.IO;
 using System.Reactive.Linq;
 using Xunit;
 using Avalonia.Threading;
@@ -21,13 +23,36 @@ namespace CrowsNestMqtt.UnitTests.ViewModels
         {
             _commandParserService = Substitute.For<ICommandParserService>();
             _mqttServiceMock = Substitute.For<IMqttService>(); // Substitute the interface
+
+            // Isolate settings persistence to a temp file per test-class instance
+            // so tests that mutate ViewModel.Settings don't leak their state
+            // into subsequent tests via the shared %LOCALAPPDATA%\CrowsNestMqtt\settings.json.
+            _originalSettingsFilePath = SettingsViewModel._settingsFilePath;
+            _tempSettingsFilePath = Path.Combine(
+                Path.GetTempPath(),
+                $"CrowsNestMqtt-tests-{Guid.NewGuid():N}",
+                "settings.json");
+            SettingsViewModel._settingsFilePath = _tempSettingsFilePath;
         }
+
+        private readonly string _originalSettingsFilePath;
+        private readonly string _tempSettingsFilePath;
 
         public void Dispose()
         {
-            // No direct cleanup needed here as each test creates its own ViewModel
-            // and the finally block in the Aspire test handles its disposal.
-            // If a shared ViewModel were used, it would be disposed here.
+            SettingsViewModel._settingsFilePath = _originalSettingsFilePath;
+            try
+            {
+                var dir = Path.GetDirectoryName(_tempSettingsFilePath);
+                if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+                {
+                    Directory.Delete(dir, recursive: true);
+                }
+            }
+            catch
+            {
+                // best-effort cleanup
+            }
         }
 
         [Fact]
@@ -42,6 +67,44 @@ namespace CrowsNestMqtt.UnitTests.ViewModels
             // Assert
             _mqttServiceMock.Received(1).UpdateSettings(Arg.Any<MqttConnectionSettings>());
             _mqttServiceMock.Received(1).ConnectAsync();
+        }
+
+        [Fact]
+        public void ConnectAsync_WithAzureHostname_ButNonAzureAuthMode_ShouldRefuseWithClearMessage()
+        {
+            // Regression: when the hostname is clearly Azure Event Grid but the
+            // auth mode is Anonymous / Userpass / Enhanced, the anonymous CONNECT
+            // is guaranteed to fail with an opaque broker error. Refuse loudly
+            // instead of reconnecting in a loop.
+            using var viewModel = new MainViewModel(_commandParserService, _mqttServiceMock, null, null, null, uiScheduler: System.Reactive.Concurrency.Scheduler.Immediate);
+            viewModel.Settings.Hostname = "myns.northeurope-1.ts.eventgrid.azure.net";
+            viewModel.Settings.SelectedAuthMode = SettingsViewModel.AuthModeSelection.Anonymous;
+
+            viewModel.ConnectCommand.Execute(System.Reactive.Unit.Default).Subscribe();
+
+            _mqttServiceMock.DidNotReceive().ConnectAsync();
+            _mqttServiceMock.DidNotReceive().UpdateSettings(Arg.Any<MqttConnectionSettings>());
+            Assert.Contains("looks like Azure Event Grid", viewModel.StatusBarText ?? string.Empty, StringComparison.Ordinal);
+            Assert.Contains(":setauthmode azure", viewModel.StatusBarText ?? string.Empty, StringComparison.Ordinal);
+            Assert.True(viewModel.HasConnectionError);
+        }
+
+        [Fact]
+        public void ConnectAsync_WithAzureMode_ButNonEventGridHost_ShouldWarnButProceed()
+        {
+            // Localhost or the mock broker are legitimate Azure-mode targets
+            // (integration testing) — warn softly but let the connect proceed.
+            using var viewModel = new MainViewModel(_commandParserService, _mqttServiceMock, null, null, null, uiScheduler: System.Reactive.Concurrency.Scheduler.Immediate);
+            viewModel.Settings.SelectedAuthMode = SettingsViewModel.AuthModeSelection.Azure;
+            // SelectedAuthMode setter clobbers Port to 8883 etc., so set hostname AFTER.
+            viewModel.Settings.Hostname = "localhost";
+            viewModel.Settings.ClientId = "some-client-id"; // silence the empty-client-id warning path
+            viewModel.Settings.SubscriptionTopic = "test/topic"; // silence the '#' subscription warning path (last-write-wins on StatusBarText)
+
+            viewModel.ConnectCommand.Execute(System.Reactive.Unit.Default).Subscribe();
+
+            _mqttServiceMock.Received(1).ConnectAsync();
+            Assert.Contains("isn't an Event Grid", viewModel.StatusBarText ?? string.Empty, StringComparison.Ordinal);
         }
 
         [Fact]

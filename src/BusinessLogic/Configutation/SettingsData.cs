@@ -25,6 +25,9 @@ public record SettingsData(
     int ParallelismDegree = 4,
     int TimeoutPeriodSeconds = 5,
     int SubscriptionQoS = 1,
+    TransportProtocol Transport = TransportProtocol.Tcp,
+    string? WebSocketPath = null,
+    string SubscriptionTopic = "#",
     bool ShowConnectionDialogOnLaunch = true,
     AppTheme Theme = AppTheme.System)
 {

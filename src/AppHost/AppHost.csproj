@@ -8,7 +8,17 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="MessagePack" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\MainApp\CrowsNestMqtt.App.csproj" />
+    <!-- Mock broker is launched at runtime as an executable, but we reference it so it builds alongside the AppHost. -->
+    <ProjectReference Include="..\..\tools\MockAzureEventGridBroker\MockAzureEventGridBroker.csproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <IsAspireProjectResource>false</IsAspireProjectResource>
+    </ProjectReference>
   </ItemGroup>
 
 </Project>

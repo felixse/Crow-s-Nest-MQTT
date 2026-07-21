@@ -30,7 +30,7 @@ using CrowsNestMqtt.Utils; // Added for AppLogger
 using DynamicData; // Added for SourceList and reactive filtering
 using DynamicData.Binding; // Added for Bind()
 using FuzzySharp; // Added for fuzzy search
-using SharpHook.Native; // Added SharpHook Native for KeyCode and ModifierMask
+using SharpHook.Data; // SharpHook 7.x: KeyCode and EventMask live in SharpHook.Data (formerly SharpHook.Native / ModifierMask)
 using SharpHook.Reactive; // Added SharpHook Reactive
 using System.Reactive.Concurrency;
 using System.Linq;
@@ -51,6 +51,7 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
     private readonly IDeleteTopicService? _deleteTopicService; // Added delete topic service
     private readonly IMessageCorrelationService? _correlationService; // Added correlation service for request-response tracking
     private readonly IResponseIconService? _iconService; // Added icon service for UI status updates
+    private readonly ITopicStatisticsService _topicStatisticsService; // Added stats service for :stats command
     private readonly EnvironmentSettingsOverrides? _environmentOverrides; // Environment variable overrides
     private Timer? _updateTimer;
     private Timer? _uiHeartbeatTimer;
@@ -66,6 +67,7 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
     private readonly List<string> _availableCommands; // Added list of commands for suggestions
     private readonly IReactiveGlobalHook? _globalHook; // Added SharpHook global hook
     private readonly IDisposable? _globalHookSubscription; // Added subscription for the hook
+    private readonly Func<string, IAccessTokenProvider> _azureTokenProviderFactory; // For :azurewhoami
     private bool _disposedValue; // For IDisposable pattern
     private string? _normalizedSelectedPath; // Normalized selected topic path (no trailing slash)
     private bool _isUpdatingSelectedNode; // Guard against re-entrancy in SelectedNode setter
@@ -99,6 +101,9 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
     private readonly IPublishHistoryService? _publishHistoryService;
     private readonly IFileAutoCompleteService? _fileAutoCompleteService;
     private PublishViewModel? _publishViewModel;
+
+    // Statistics window support (:stats command)
+    private StatsViewModel? _statsViewModel;
 
     // Topic normalization helper (single place)
     private static string? NormalizeTopic(string? t) => string.IsNullOrWhiteSpace(t) ? null : t.Trim().TrimEnd('/');
@@ -738,9 +743,25 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
     public event EventHandler? TogglePublishWindowRequested;
 
     /// <summary>
+    /// Event raised when the statistics window (:stats) should be shown or focused.
+    /// </summary>
+    public event EventHandler? ShowStatsWindowRequested;
+
+    /// <summary>
     /// Gets the PublishViewModel for the publish window.
     /// </summary>
     public PublishViewModel? PublishViewModel => _publishViewModel;
+
+    /// <summary>
+    /// Gets the StatsViewModel for the statistics window. Lazily created on first :stats invocation.
+    /// </summary>
+    public StatsViewModel? StatsViewModel => _statsViewModel;
+
+    /// <summary>
+    /// Exposes the topic statistics service used to power the :stats window.
+    /// Primarily intended for testing.
+    /// </summary>
+    internal ITopicStatisticsService TopicStatisticsService => _topicStatisticsService;
 
     /// <summary>
     /// Gets or sets a value indicating whether the main application window currently has focus.
@@ -757,23 +778,40 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
     /// Sets up placeholder data and starts the UI update timer.
     /// </summary>
     // Constructor now requires ICommandParserService
-    public MainViewModel(ICommandParserService commandParserService, IMqttService? mqttService = null, IDeleteTopicService? deleteTopicService = null, IMessageCorrelationService? correlationService = null, IResponseIconService? iconService = null, EnvironmentSettingsOverrides? environmentOverrides = null, IScheduler? uiScheduler = null, IPublishHistoryService? publishHistoryService = null, IFileAutoCompleteService? fileAutoCompleteService = null)
+    public MainViewModel(ICommandParserService commandParserService, IMqttService? mqttService = null, IDeleteTopicService? deleteTopicService = null, IMessageCorrelationService? correlationService = null, IResponseIconService? iconService = null, EnvironmentSettingsOverrides? environmentOverrides = null, IScheduler? uiScheduler = null, IPublishHistoryService? publishHistoryService = null, IFileAutoCompleteService? fileAutoCompleteService = null, Func<string, IAccessTokenProvider>? azureTokenProviderFactory = null, ITopicStatisticsService? topicStatisticsService = null)
     {
         _commandParserService = commandParserService ?? throw new ArgumentNullException(nameof(commandParserService)); // Store injected service
         _deleteTopicService = deleteTopicService; // Store injected delete topic service (optional)
         _correlationService = correlationService; // Store injected correlation service (optional)
         _iconService = iconService; // Store injected icon service (optional)
+        _topicStatisticsService = topicStatisticsService ?? new TopicStatisticsService(); // Lifetime per-topic aggregates for :stats
         _publishHistoryService = publishHistoryService; // Store injected publish history service (optional)
         _fileAutoCompleteService = fileAutoCompleteService; // Store injected file autocomplete service (optional)
+        _azureTokenProviderFactory = azureTokenProviderFactory
+            ?? (scope => new AzureAccessTokenProvider(scope)); // Real DefaultAzureCredential-backed provider in prod
         _uiScheduler = uiScheduler 
             ?? (Application.Current == null ? Scheduler.Immediate : RxSchedulers.MainThreadScheduler); // Use Immediate in non-Avalonia (plain unit test) context
+        var entryAssemblyName = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Name;
         _testMode = Application.Current == null
                     || AppDomain.CurrentDomain.FriendlyName?.IndexOf("testhost", StringComparison.OrdinalIgnoreCase) >= 0
                     || AppDomain.CurrentDomain.FriendlyName?.IndexOf("vstest", StringComparison.OrdinalIgnoreCase) >= 0
+                    || entryAssemblyName?.Contains("Tests", StringComparison.OrdinalIgnoreCase) == true
                     || Environment.GetEnvironmentVariable("CI") == "true"
                     || uiScheduler == Scheduler.Immediate; // If ImmediateScheduler is injected, we're definitely in test mode
         _syncContext = SynchronizationContext.Current; // Capture sync context
         Settings = new SettingsViewModel(environmentOverrides); // Instantiate settings with env overrides
+        Settings.HostnameNormalized += (_, args) =>
+        {
+            // Surface user-visible corrections (URL scheme stripped, port
+            // extracted, Event Grid HTTP → MQTT suffix rewritten, etc.) via the
+            // status bar so the user isn't confused by a silently changed field.
+            StatusBarText = args.ToStatusMessage();
+            Log.Information(
+                "Hostname normalized: '{Original}' → '{Cleaned}' (notes: {Notes})",
+                args.Original,
+                args.Cleaned,
+                string.Join("; ", args.Notes));
+        };
         _environmentOverrides = environmentOverrides;
         JsonViewer = new JsonViewerViewModel(); // Instantiate JSON viewer VM
         CopyTextToClipboardInteraction = new Interaction<string, Unit>(); // Initialize the interaction
@@ -809,22 +847,27 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
             _rawPayloadDocument = new TextDocument();
         }
 
-        // Initialize LibVLC with error handling for test environments
-        try
+        if (_testMode)
         {
-            Core.Initialize();
-            _libVLC = new LibVLC();
-            _vlcMediaPlayer = new MediaPlayer(_libVLC);
-            VlcMediaPlayer = _vlcMediaPlayer;
-        }
-        catch (VLCException ex)
-        {
-            // LibVLC initialization failed (likely in test environment)
-            // Log the error but continue without video functionality
-            AppLogger.Warning($"LibVLC initialization failed: {ex.Message}. Video playback will not be available.");
             _libVLC = null;
             _vlcMediaPlayer = null;
-            VlcMediaPlayer = null;
+        }
+        else
+        {
+            try
+            {
+                Core.Initialize();
+                _libVLC = new LibVLC();
+                _vlcMediaPlayer = new MediaPlayer(_libVLC);
+                VlcMediaPlayer = _vlcMediaPlayer;
+            }
+            catch (VLCException ex)
+            {
+                AppLogger.Warning($"LibVLC initialization failed: {ex.Message}. Video playback will not be available.");
+                _libVLC = null;
+                _vlcMediaPlayer = null;
+                VlcMediaPlayer = null;
+            }
         }
 
         // Populate the list of available commands (using the help dictionary keys)
@@ -1054,7 +1097,10 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
             DefaultTopicBufferSizeBytes = Settings.Into().DefaultTopicBufferSizeBytes,
             AuthMode = Settings.Into().AuthMode,
             UseTls = Settings.UseTls,
-            SubscriptionQoS = Settings.SubscriptionQoS
+            SubscriptionQoS = Settings.SubscriptionQoS,
+            SubscriptionTopic = Settings.SubscriptionTopic,
+            Transport = Settings.SelectedTransport,
+            WebSocketPath = Settings.WebSocketPath
         });
 
         _mqttService.ConnectionStateChanged += OnConnectionStateChanged;
@@ -1132,13 +1178,13 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
         {
             try
             {
-                _globalHook = new SimpleReactiveGlobalHook();
+                _globalHook = new ReactiveGlobalHook();
                 _globalHookSubscription = _globalHook.KeyPressed
                     .Do(e => { })
                     .Where(e =>
                     {
-                        bool ctrl = e.RawEvent.Mask.HasFlag(ModifierMask.LeftCtrl) || e.RawEvent.Mask.HasFlag(ModifierMask.RightCtrl);
-                        bool shift = e.RawEvent.Mask.HasFlag(ModifierMask.LeftShift) || e.RawEvent.Mask.HasFlag(ModifierMask.RightShift);
+                        bool ctrl = e.RawEvent.Mask.HasFlag(EventMask.LeftCtrl) || e.RawEvent.Mask.HasFlag(EventMask.RightCtrl);
+                        bool shift = e.RawEvent.Mask.HasFlag(EventMask.LeftShift) || e.RawEvent.Mask.HasFlag(EventMask.RightShift);
                         bool pKey = e.Data.KeyCode == KeyCode.VcP;
                         bool focused = IsWindowFocused;
                         bool match = focused && ctrl && shift && pKey;
@@ -1158,11 +1204,23 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
                     .Select(_ => Unit.Default)
                     .InvokeCommand(FocusCommandBarCommand);
 
-                _globalHook.RunAsync().Subscribe(
-                    _ => { },
-                    ex => Log.Error(ex, "Error during Global Hook execution (RunAsync OnError)"),
-                    () => Log.Information("Global Hook stopped.")
-                );
+                // SharpHook 7.x: RunAsync now returns a Task instead of IObservable<Unit>.
+                // Observe completion/failure with ContinueWith so the hook lifecycle is still logged.
+                _ = _globalHook.RunAsync().ContinueWith(t =>
+                {
+                    if (t.IsFaulted && t.Exception is { } ex)
+                    {
+                        Log.Error(ex.GetBaseException(), "Error during Global Hook execution (RunAsync faulted).");
+                    }
+                    else if (t.IsCanceled)
+                    {
+                        Log.Information("Global Hook canceled.");
+                    }
+                    else
+                    {
+                        Log.Information("Global Hook stopped.");
+                    }
+                }, TaskScheduler.Default);
                 Log.Information("SharpHook Global Hook RunAsync called.");
             }
             catch (Exception ex)
@@ -1336,6 +1394,17 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
 
         topicCounts.TryGetValue(topic, out var currentCount);
         topicCounts[topic] = currentCount + 1;
+
+        // Record lifetime statistics before UI processing so :stats stays
+        // accurate even when the ring buffer later evicts this message.
+        try
+        {
+            _topicStatisticsService.Record(topic, (int)e.ApplicationMessage.Payload.Length, DateTime.UtcNow);
+        }
+        catch (Exception statsEx)
+        {
+            AppLogger.Warning($"Failed to record topic statistics for '{topic}': {statsEx.Message}");
+        }
 
         string preview;
         try
@@ -2484,6 +2553,69 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
         ConnectionStatusMessage = null;
         this.RaisePropertyChanged(nameof(HasConnectionError));
 
+        // Coherence check: refuse to connect when the hostname obviously targets
+        // Azure Event Grid but the auth mode isn't Azure. Otherwise the client
+        // would fire an anonymous / userpass CONNECT that Event Grid rejects and
+        // then loop through reconnects with an opaque error.
+        var hostIsEventGrid = IsAzureEventGridHost(Settings.Hostname);
+        var modeIsAzure = Settings.SelectedAuthMode == SettingsViewModel.AuthModeSelection.Azure;
+
+        if (hostIsEventGrid && !modeIsAzure)
+        {
+            var msg =
+                $"Cannot connect: hostname '{Settings.Hostname}' looks like Azure Event Grid, "
+                + $"but auth mode is '{Settings.SelectedAuthMode}'. Azure Event Grid rejects anonymous / "
+                + "username-password / K8S-SAT CONNECTs. Run ':setauthmode azure' first, then retry ':connect'.";
+            StatusBarText = msg;
+            ConnectionStatusMessage = msg;
+            this.RaisePropertyChanged(nameof(HasConnectionError));
+            Log.Warning(
+                "Refusing connect: Event Grid hostname '{Host}' with non-Azure auth mode {Mode}.",
+                Settings.Hostname,
+                Settings.SelectedAuthMode);
+            return;
+        }
+
+        if (modeIsAzure && !hostIsEventGrid)
+        {
+            // Soft warning only — the mock broker on localhost is a legitimate
+            // Azure-mode target that isn't an Event Grid FQDN, so don't block.
+            StatusBarText =
+                $"Note: Azure auth mode is selected but hostname '{Settings.Hostname}' isn't an Event Grid "
+                + "topic-space endpoint. Continuing — if this isn't intentional, set the hostname to "
+                + "'<namespace>.<region>-1.ts.eventgrid.azure.net'.";
+            Log.Information(
+                "Azure auth mode with non-Event-Grid hostname '{Host}'. Proceeding.",
+                Settings.Hostname);
+        }
+
+        // Azure Event Grid rejects OAUTH2-JWT CONNECT when the Client ID
+        // doesn't map to a client resource / attribute rule on the namespace.
+        // Surface an actionable warning without blocking (some attribute-based
+        // setups do allow auto-generated Client IDs).
+        if (modeIsAzure && string.IsNullOrWhiteSpace(Settings.ClientId))
+        {
+            StatusBarText =
+                "Warning: Azure Event Grid usually requires the MQTT Client ID to match a registered client "
+                + "(or a client-authentication-name attribute) on the namespace. An empty/auto-generated Client ID "
+                + "will typically be rejected with NotAuthorized. Run ':azurewhoami' to see the identity that will "
+                + "be used, then ':setclientid <name>' to set the Client ID. Attempting connection anyway...";
+            Log.Warning("Connecting to Azure Event Grid with empty Client ID — connection is likely to fail.");
+        }
+
+        // Azure Event Grid always rejects SUBSCRIBE to '#'. Warn (soft) so the
+        // user isn't surprised when the subscription bounces after a successful
+        // CONNECT; don't block, because the user might explicitly want the
+        // CONNECT to succeed to verify auth even if SUBSCRIBE won't.
+        if (modeIsAzure && Settings.SubscriptionTopic == "#")
+        {
+            StatusBarText =
+                "Warning: Subscription filter is '#' but Azure Event Grid rejects wildcard subscriptions outside "
+                + "your Topic Space. Change it with ':setsubscription <filter>' (e.g. 'sensors/#') that matches "
+                + "your Topic Space template. Attempting connection anyway...";
+            Log.Warning("Connecting to Azure Event Grid with default '#' subscription filter — SUBSCRIBE will be rejected.");
+        }
+
         // Rebuild connection settings from ViewModel just before connecting
         var connectionSettings = new MqttConnectionSettings
         {
@@ -2497,7 +2629,10 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
             DefaultTopicBufferSizeBytes = Settings.Into().DefaultTopicBufferSizeBytes,
             AuthMode = Settings.Into().AuthMode,
             UseTls = Settings.UseTls,
-            SubscriptionQoS = Settings.SubscriptionQoS
+            SubscriptionQoS = Settings.SubscriptionQoS,
+            SubscriptionTopic = Settings.SubscriptionTopic,
+            Transport = Settings.SelectedTransport,
+            WebSocketPath = Settings.WebSocketPath
         };
 
         _mqttService.UpdateSettings(connectionSettings);
@@ -2541,8 +2676,89 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
         TopicTreeNodes.Clear();        // Clear the topic tree
         SelectedMessage = null;        // Deselect any active message
         SelectedNode = null;           // Deselect any active node
+        _topicStatisticsService.Reset(); // Also reset lifetime :stats aggregates
         Log.Information("Message history and topic tree cleared.");
         ShowStatus("Message history and topic tree cleared.");
+    }
+
+    /// <summary>
+    /// Fetches an Azure access token via <c>DefaultAzureCredential</c>, decodes
+    /// the JWT, and surfaces the caller-identifying claims to the status bar so
+    /// users can register a matching Event Grid Client resource. Best-effort:
+    /// swallows credential errors and reports them via the status bar.
+    /// </summary>
+    private async Task ExecuteAzureWhoAmIAsync()
+    {
+        try
+        {
+            var scope = (Settings.AuthenticationScope is { Length: > 0 } s)
+                ? s
+                : AzureAuthenticationMode.DefaultScope;
+
+            StatusBarText = $"Requesting Azure access token for scope '{scope}'...";
+
+            var provider = _azureTokenProviderFactory(scope);
+            var token = await provider.GetTokenAsync().ConfigureAwait(false);
+
+            var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+            var jwt = handler.ReadJwtToken(token.Token);
+
+            static string? Claim(System.IdentityModel.Tokens.Jwt.JwtSecurityToken t, string name) =>
+                t.Claims.FirstOrDefault(c => c.Type == name)?.Value;
+
+            var oid = Claim(jwt, "oid");
+            var upn = Claim(jwt, "upn") ?? Claim(jwt, "preferred_username") ?? Claim(jwt, "unique_name");
+            var name = Claim(jwt, "name");
+            var appId = Claim(jwt, "appid") ?? Claim(jwt, "azp");
+            var tid = Claim(jwt, "tid");
+            var idType = Claim(jwt, "idtyp"); // "user" or "app"
+
+            var parts = new List<string>();
+            if (!string.IsNullOrEmpty(upn)) parts.Add($"upn={upn}");
+            if (!string.IsNullOrEmpty(name)) parts.Add($"name={name}");
+            if (!string.IsNullOrEmpty(oid)) parts.Add($"oid={oid}");
+            if (!string.IsNullOrEmpty(appId)) parts.Add($"appid={appId}");
+            if (!string.IsNullOrEmpty(tid)) parts.Add($"tenant={tid}");
+            if (!string.IsNullOrEmpty(idType)) parts.Add($"type={idType}");
+
+            var summary = parts.Count == 0
+                ? "Signed in, but the returned token has no identifying claims."
+                : "Signed in as " + string.Join(", ", parts);
+
+            var suggestedName = oid ?? upn ?? appId;
+            var hint = suggestedName is null
+                ? " Register an Event Grid Client whose authenticationName matches one of these values, then set MQTT Client ID (:setclientid <name>) to that client's name."
+                : $" '{suggestedName}' copied to clipboard — use it as the Client authenticationName on your Event Grid namespace. Then run :setclientid <client-name>.";
+
+            StatusBarText = summary + "." + hint;
+            Log.Information(
+                "Azure whoami: token acquired (expires {Expiry:O}). Claims: {Summary}",
+                token.ExpiresOn,
+                summary);
+
+            // Push the most useful identifier to the clipboard so the user can
+            // paste it straight into `az eventgrid namespace client create
+            // --authentication-name <value>` (or the portal). Best-effort; if
+            // there's no clipboard handler registered we simply log and move on.
+            if (suggestedName is not null)
+            {
+                try
+                {
+                    await CopyTextToClipboardInteraction.Handle(suggestedName);
+                    Log.Information("Copied Azure identity '{Suggested}' to clipboard.", suggestedName);
+                }
+                catch (Exception clipEx)
+                {
+                    Log.Warning(clipEx, "Failed to copy Azure identity to clipboard.");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusBarText =
+                $"Azure whoami failed: {ex.Message}. Try 'az login' or ensure AZURE_CLIENT_ID/TENANT_ID/CLIENT_SECRET are set.";
+            Log.Warning(ex, "Azure whoami failed.");
+        }
     }
 
     private async Task ExecuteDeleteTopicAsync()
@@ -2847,6 +3063,39 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
         ShowPublishWindowRequested?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// Gets the current <see cref="StatsViewModel"/>, creating and starting live refresh
+    /// on the first call. Subsequent calls return the same instance so window
+    /// re-opens share the same rows and selection state.
+    /// </summary>
+    internal StatsViewModel GetOrCreateStatsViewModel()
+    {
+        if (_statsViewModel == null)
+        {
+            _statsViewModel = new StatsViewModel(_topicStatisticsService);
+            this.RaisePropertyChanged(nameof(StatsViewModel));
+
+            if (!_testMode)
+            {
+                _statsViewModel.StartLiveRefresh();
+            }
+        }
+        else
+        {
+            // Refresh to make sure the window shows the current state on re-open.
+            _statsViewModel.RefreshNow();
+        }
+
+        return _statsViewModel;
+    }
+
+    private void HandleStatsCommand()
+    {
+        GetOrCreateStatsViewModel();
+        ShowStatsWindowRequested?.Invoke(this, EventArgs.Empty);
+        Log.Information("Statistics window requested via :stats command.");
+    }
+
     private void ExecuteSubmitInput()
     {
         Log.Debug("ExecuteSubmitInput triggered. CommandText: '{CommandText}'", CommandText); // Add logging
@@ -3076,20 +3325,50 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
                         }
                         else if (mode == "enhanced")
                         {
-                            this.Settings.AuthenticationMethod = "Enhanced Authentication";
-                            StatusBarText = "Authentication method set to 'Enhanced Authentication'. Settings will be saved.";
-                            Log.Information("Authentication method set to 'Enhanced Authentication' via command.");
+                            this.Settings.SelectedAuthMode = SettingsViewModel.AuthModeSelection.Enhanced;
+                            StatusBarText = "Authentication mode set to Enhanced. Settings will be saved.";
+                            Log.Information("Authentication mode set to Enhanced via command.");
+                        }
+                        else if (mode == "azure")
+                        {
+                            this.Settings.SelectedAuthMode = SettingsViewModel.AuthModeSelection.Azure;
+
+                            // Nudge unrealistic timing values toward Azure Event Grid
+                            // defaults. The broker enforces a minimum keep-alive
+                            // (usually ≥30s) and rejects extremely short session
+                            // expiries with CleanSession=true.
+                            if (this.Settings.KeepAliveIntervalSeconds < 30)
+                            {
+                                this.Settings.KeepAliveIntervalSeconds = 30;
+                            }
+                            if (this.Settings.SessionExpiryIntervalSeconds is null or < 300)
+                            {
+                                this.Settings.SessionExpiryIntervalSeconds = 3600;
+                            }
+
+                            var wildcardHint = this.Settings.SubscriptionTopic == "#"
+                                ? " Also change ':setsubscription <filter>' — Azure Event Grid always rejects '#'; use a filter that matches your Topic Space template (e.g. 'sensors/#')."
+                                : string.Empty;
+
+                            StatusBarText =
+                                "Authentication mode set to Azure (OAUTH2-JWT via DefaultAzureCredential). "
+                                + "Port 8883, TLS, TCP transport, and safe Keep Alive / Session Expiry values enabled. "
+                                + "Set the MQTT Client ID (:setclientid <name>) to match a registered Client resource on your Event Grid namespace. "
+                                + "Run :azurewhoami to see the identity that will be used for token acquisition."
+                                + wildcardHint
+                                + " Settings will be saved.";
+                            Log.Information("Authentication mode set to Azure via command.");
                         }
                         else
                         {
                             // This case should ideally be caught by CommandParserService, but good for robustness
-                            StatusBarText = "Error: Invalid argument for :setauthmode. Expected <anonymous|userpass|enhanced>.";
+                            StatusBarText = "Error: Invalid argument for :setauthmode. Expected <anonymous|userpass|enhanced|azure>.";
                             Log.Warning("Invalid argument for SetAuthMode command: {Argument}", command.Arguments[0]);
                         }
                     }
                     else
                     {
-                        StatusBarText = "Error: :setauthmode requires exactly one argument <anonymous|userpass|enhanced>.";
+                        StatusBarText = "Error: :setauthmode requires exactly one argument <anonymous|userpass|enhanced|azure>.";
                         Log.Warning("Invalid arguments for SetAuthMode command.");
                     }
                     break;
@@ -3114,9 +3393,31 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
                 case CommandType.SetAuthMethod:
                     if (command.Arguments.Count == 1)
                     {
-                        this.Settings.AuthenticationMethod = command.Arguments[0];
-                        StatusBarText = $"Authentication method set to '{command.Arguments[0]}'. Settings will be saved.";
-                        Log.Information("Authentication method set via command: {Method}", command.Arguments[0]);
+                        var methodArg = command.Arguments[0];
+                        // Guard against a very common autocomplete slip: :setauthmethod
+                        // and :setauthmode share a prefix, and the palette sorts
+                        // alphabetically so 'method' appears above 'mode'. If the
+                        // user passes a known auth-mode name here, redirect them
+                        // rather than silently writing to the (unused) enhanced-auth
+                        // method field.
+                        var lowered = methodArg.ToLowerInvariant();
+                        if (lowered is "anonymous" or "userpass" or "enhanced" or "azure")
+                        {
+                            StatusBarText =
+                                $"'{methodArg}' is an authentication *mode*, not a *method*. "
+                                + $"Did you mean ':setauthmode {lowered}'? "
+                                + "(:setauthmethod sets the enhanced-auth method like 'SCRAM-SHA-1' or 'K8S-SAT'.)";
+                            Log.Warning(
+                                "Rejected :setauthmethod {Arg} — argument matches an auth mode name; user likely meant :setauthmode.",
+                                methodArg);
+                        }
+                        else
+                        {
+                            this.Settings.AuthenticationMethod = methodArg;
+                            StatusBarText =
+                                $"Enhanced-auth method set to '{methodArg}' (applied when auth mode is Enhanced). Settings will be saved.";
+                            Log.Information("Enhanced-auth method set via command: {Method}", methodArg);
+                        }
                     }
                     else
                     {
@@ -3136,6 +3437,52 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
                         StatusBarText = "Error: :setauthdata requires exactly one argument <data>.";
                         Log.Warning("Invalid arguments for SetAuthData command.");
                     }
+                    break;
+                case CommandType.SetAuthScope:
+                    if (command.Arguments.Count == 1 && !string.IsNullOrWhiteSpace(command.Arguments[0]))
+                    {
+                        this.Settings.AuthenticationScope = command.Arguments[0];
+                        StatusBarText = $"Azure OAuth scope set to '{command.Arguments[0]}'. Settings will be saved.";
+                        Log.Information("Azure OAuth scope set via command: {Scope}", command.Arguments[0]);
+                    }
+                    else
+                    {
+                        StatusBarText = "Error: :setauthscope requires exactly one argument <scope>.";
+                        Log.Warning("Invalid arguments for SetAuthScope command.");
+                    }
+                    break;
+                case CommandType.SetClientId:
+                    if (command.Arguments.Count == 0)
+                    {
+                        this.Settings.ClientId = null;
+                        StatusBarText = "MQTT Client ID cleared (broker will assign one). Settings will be saved.";
+                        Log.Information("MQTT Client ID cleared via command.");
+                    }
+                    else
+                    {
+                        var newClientId = command.Arguments[0];
+                        this.Settings.ClientId = newClientId;
+                        StatusBarText = $"MQTT Client ID set to '{newClientId}'. Settings will be saved.";
+                        Log.Information("MQTT Client ID set via command: {ClientId}", newClientId);
+                    }
+                    break;
+                case CommandType.SetSubscriptionTopic:
+                    if (command.Arguments.Count == 0)
+                    {
+                        this.Settings.SubscriptionTopic = "#";
+                        StatusBarText = "Subscription topic reset to '#'. Reconnect for the new subscription to take effect.";
+                        Log.Information("Subscription topic reset to '#' via command.");
+                    }
+                    else
+                    {
+                        var newFilter = command.Arguments[0];
+                        this.Settings.SubscriptionTopic = newFilter;
+                        StatusBarText = $"Subscription topic set to '{newFilter}'. Reconnect for the new subscription to take effect.";
+                        Log.Information("Subscription topic set via command: {Filter}", newFilter);
+                    }
+                    break;
+                case CommandType.AzureWhoAmI:
+                    _ = ExecuteAzureWhoAmIAsync();
                     break;
                 case CommandType.SetUseTls:
                     if (command.Arguments.Count == 1)
@@ -3161,6 +3508,9 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
                     break;
                 case CommandType.Publish:
                     HandlePublishCommand(command);
+                    break;
+                case CommandType.Stats:
+                    HandleStatsCommand();
                     break;
                 default:
                     StatusBarText = $"Error: Unknown command type '{command.Type}'.";
@@ -3193,14 +3543,19 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
         { "view", (":view <raw|json|image>", "Switches the payload view between raw text, JSON tree and image.") },
         { "setuser", (":setuser <username>", "Sets MQTT username. Switches to Username/Password auth if current mode is Anonymous.") },
         { "setpass", (":setpass <password>", "Sets MQTT password. Switches to Username/Password auth if current mode is Anonymous.") },
-        { "setauthmode", (":setauthmode <anonymous|userpass|enhanced>", "Sets the MQTT authentication mode.") },
+        { "setauthmode", (":setauthmode <anonymous|userpass|enhanced|azure>", "Sets the MQTT authentication mode. 'azure' uses Entra ID (DefaultAzureCredential) to obtain an OAUTH2-JWT token for Azure Event Grid namespaces.") },
         { "setauthmethod", (":setauthmethod <method>", "Sets the authentication method for enhanced authentication (e.g., SCRAM-SHA-1, K8S-SAT).") },
         { "setauthdata", (":setauthdata <data>", "Sets the authentication data for enhanced authentication (method-specific data).") },
+        { "setauthscope", (":setauthscope <scope>", "Sets the OAuth scope requested when Azure authentication mode is active. Defaults to https://eventgrid.azure.net/.default.") },
+        { "setclientid", (":setclientid [<client-id>]", "Sets the MQTT Client ID. Required for Azure Event Grid to match a registered Client resource on the namespace. Omit the argument to clear.") },
+        { "setsubscription", (":setsubscription [<topic-filter>]", "Sets the MQTT topic filter used for the initial subscription. Defaults to '#' (all topics); Azure Event Grid requires a filter matching your Topic Space template (e.g. 'sensors/#'). Reconnect after changing.") },
+        { "azurewhoami", (":azurewhoami", "Prints the identity (upn, oid, name, appid) that DefaultAzureCredential would use for Azure Event Grid token acquisition. Useful for choosing the correct Event Grid Client authenticationName.") },
         { "setusetls", (":setusetls <true|false>", "Sets whether to use TLS for MQTT connections. true = enable TLS, false = disable TLS.") },
         { "deletetopic", (":deletetopic [topic-pattern] [--confirm]", "Deletes retained messages from a topic and its subtopics by publishing empty retained messages. Uses selected topic if no pattern specified.") },
         { "gotoresponse", (":gotoresponse", "Navigates to the response message for the currently selected MQTT v5 request message.") },
         { "settings", (":settings", "Toggles the visibility of the settings pane.") },
-        { "publish", (":publish [topic] [@file|text]", "Opens the publish window. Optionally pre-fills topic and payload from a file (@path) or inline text.") }
+        { "publish", (":publish [topic] [@file|text]", "Opens the publish window. Optionally pre-fills topic and payload from a file (@path) or inline text.") },
+        { "stats", (":stats", "Opens a window with per-topic statistics (message count, total/average payload size, mean interval). The table can be copied as Markdown.") }
     };
 
     private void DisplayHelpInformation(string? commandName = null)
@@ -3284,6 +3639,17 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
         if (command.Arguments.Count == 0)
         {
             // :connect (use all from settings)
+            // If the saved hostname is an Event Grid namespace but auth mode isn't yet
+            // Azure, auto-switch so the connection actually works.
+            if (IsAzureEventGridHost(Settings.Hostname)
+                && Settings.SelectedAuthMode != SettingsViewModel.AuthModeSelection.Azure)
+            {
+                Settings.SelectedAuthMode = SettingsViewModel.AuthModeSelection.Azure;
+                Log.Information(
+                    "Detected Azure Event Grid host '{Host}' in settings; switching to Azure auth mode.",
+                    Settings.Hostname);
+            }
+
             StatusBarText = $"Attempting to connect to {Settings.Hostname}:{Settings.Port}...";
             ConnectCommand.Execute().Subscribe(
                 _ => StatusBarText = $"Successfully initiated connection to {Settings.Hostname}:{Settings.Port}.",
@@ -3296,13 +3662,48 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
         }
         else if (command.Arguments.Count == 1)
         {
-            // :connect server:port
+            // :connect server:port or :connect ws://server:port/path or :connect wss://server:port/path
+            var arg = command.Arguments[0];
+
+            // Check for WebSocket URI scheme
+            if (arg.StartsWith("ws://", StringComparison.OrdinalIgnoreCase) ||
+                arg.StartsWith("wss://", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var uri = new Uri(arg);
+                    var scheme = uri.Scheme.ToLowerInvariant();
+                    Settings.Hostname = uri.Host;
+                    Settings.Port = uri.Port > 0 ? uri.Port : (scheme == "wss" ? 443 : 80);
+                    Settings.SelectedTransport = BusinessLogic.Configuration.TransportProtocol.WebSocket;
+                    Settings.UseTls = scheme == "wss";
+                    Settings.WebSocketPath = uri.AbsolutePath == "/" ? null : uri.AbsolutePath;
+                }
+                catch (UriFormatException)
+                {
+                    StatusBarText = $"Error: Invalid WebSocket URI '{arg}'. Expected: ws://host:port/path or wss://host:port/path";
+                    Log.Warning("Invalid WebSocket URI for :connect argument: {Argument}", arg);
+                    return;
+                }
+
+                StatusBarText = $"Attempting WebSocket connection to {Settings.Hostname}:{Settings.Port}...";
+                ConnectCommand.Execute().Subscribe(
+                    _ => StatusBarText = $"Successfully initiated WebSocket connection to {Settings.Hostname}:{Settings.Port}.",
+                    ex =>
+                    {
+                        StatusBarText = $"Error initiating connection: {ex.Message}";
+                        Log.Error(ex, "Error executing ConnectCommand");
+                    });
+                return;
+            }
+
+            // :connect server:port (TCP)
             // Parse server:port from first argument (already validated by parser)
-            var parts = command.Arguments[0].Split(':');
+            var parts = arg.Split(':');
             if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || !int.TryParse(parts[1], out int port) || port < 1 || port > 65535)
             {
-                StatusBarText = $"Error: Invalid format for :connect argument '{command.Arguments[0]}'. Expected: <server_address:port>";
-                Log.Warning("Invalid format for :connect argument: {Argument}", command.Arguments[0]);
+                StatusBarText = $"Error: Invalid format for :connect argument '{arg}'. Expected: <server_address:port> or ws://host:port/path";
+                Log.Warning("Invalid format for :connect argument: {Argument}", arg);
                 return;
             }
             string host = parts[0];
@@ -3310,6 +3711,21 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
             // Update settings before connecting
             Settings.Hostname = host;
             Settings.Port = port;
+
+            // Azure Event Grid namespace MQTT hostnames end with .ts.eventgrid.azure.net.
+            // Auto-switch to Azure auth mode so the user doesn't need to run
+            // :setauthmode azure / :setusetls true separately.
+            if (IsAzureEventGridHost(host))
+            {
+                if (Settings.SelectedAuthMode != SettingsViewModel.AuthModeSelection.Azure)
+                {
+                    Settings.SelectedAuthMode = SettingsViewModel.AuthModeSelection.Azure;
+                    Log.Information("Detected Azure Event Grid host '{Host}'; switching to Azure auth mode.", host);
+                }
+                // SelectedAuthMode.Azure setter already forces UseTls=true, Port=8883, Transport=Tcp.
+                // Restore the user-supplied port if they explicitly specified one other than 8883.
+                Settings.Port = port;
+            }
 
             StatusBarText = $"Attempting to connect to {host}:{port}...";
             ConnectCommand.Execute().Subscribe(
@@ -3328,6 +3744,23 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
             Log.Warning("Invalid argument count for :connect command: {Count}", command.Arguments.Count);
             return;
         }
+    }
+
+    /// <summary>
+    /// Returns true when <paramref name="host"/> looks like an Azure Event Grid namespace
+    /// endpoint — either the MQTT topic-space FQDN (<c>*.ts.eventgrid.azure.net</c>)
+    /// or the HTTP data-plane URL (<c>*.eventgrid.azure.net</c>). The latter is
+    /// accepted so that pasted Data Plane URLs still trigger the Azure auto-
+    /// config path; the hostname normalizer rewrites them to the MQTT form.
+    /// </summary>
+    internal static bool IsAzureEventGridHost(string? host)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return false;
+        }
+        return host.EndsWith(".ts.eventgrid.azure.net", StringComparison.OrdinalIgnoreCase)
+            || host.EndsWith(".eventgrid.azure.net", StringComparison.OrdinalIgnoreCase);
     }
 
     private void Export(ParsedCommand command)
@@ -4484,6 +4917,7 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
                 CopyPayloadCommand?.Dispose(); // Dispose the new command
                 DeleteTopicCommand?.Dispose(); // Dispose delete topic command
                 NavigateToResponseCommand?.Dispose(); // Dispose navigate to response command
+                _statsViewModel?.Dispose(); // Dispose the :stats window VM (stops live refresh)
                                                // Interactions don't typically need explicit disposal unless they hold heavy resources
                 _cts.Dispose(); // Dispose the CancellationTokenSource itself
                 }

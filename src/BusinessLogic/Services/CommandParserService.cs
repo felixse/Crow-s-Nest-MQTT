@@ -303,12 +303,12 @@ public class CommandParserService : ICommandParserService
                 if (arguments.Count == 1)
                 {
                     string mode = arguments[0].ToLowerInvariant();
-                    if (mode == "anonymous" || mode == "userpass" || mode == "enhanced")
+                    if (mode == "anonymous" || mode == "userpass" || mode == "enhanced" || mode == "azure")
                     {
                         return CommandResult.SuccessCommand(new ParsedCommand(CommandType.SetAuthMode, arguments));
                     }
                 }
-                return CommandResult.Failure("Invalid arguments for :setauthmode. Expected: :setauthmode <anonymous|userpass|enhanced>");
+                return CommandResult.Failure("Invalid arguments for :setauthmode. Expected: :setauthmode <anonymous|userpass|enhanced|azure>");
 
             case "setauthmethod":
                 if (arguments.Count == 1)
@@ -323,6 +323,54 @@ public class CommandParserService : ICommandParserService
                     return CommandResult.SuccessCommand(new ParsedCommand(CommandType.SetAuthData, arguments));
                 }
                 return CommandResult.Failure("Invalid arguments for :setauthdata. Expected: :setauthdata <data>");
+
+            case "setauthscope":
+                if (arguments.Count == 1 && !string.IsNullOrWhiteSpace(arguments[0]))
+                {
+                    return CommandResult.SuccessCommand(new ParsedCommand(CommandType.SetAuthScope, arguments));
+                }
+                return CommandResult.Failure("Invalid arguments for :setauthscope. Expected: :setauthscope <scope>");
+
+            case "setclientid":
+                // :setclientid <id>   → set the client id to <id>
+                // :setclientid         → clear the client id (auto-generated)
+                if (arguments.Count == 0)
+                {
+                    return CommandResult.SuccessCommand(new ParsedCommand(CommandType.SetClientId, new List<string>()));
+                }
+                if (arguments.Count == 1)
+                {
+                    return CommandResult.SuccessCommand(new ParsedCommand(CommandType.SetClientId, arguments));
+                }
+                return CommandResult.Failure("Invalid arguments for :setclientid. Expected: :setclientid [<client-id>]");
+
+            case "setsubscription":
+                // :setsubscription <filter>  → subscribe using <filter>
+                // :setsubscription           → reset to '#'
+                if (arguments.Count == 0)
+                {
+                    return CommandResult.SuccessCommand(new ParsedCommand(CommandType.SetSubscriptionTopic, new List<string>()));
+                }
+                if (arguments.Count == 1 && !string.IsNullOrWhiteSpace(arguments[0]))
+                {
+                    return CommandResult.SuccessCommand(new ParsedCommand(CommandType.SetSubscriptionTopic, arguments));
+                }
+                return CommandResult.Failure("Invalid arguments for :setsubscription. Expected: :setsubscription [<topic-filter>]");
+
+            case "azurewhoami":
+                if (arguments.Count == 0)
+                {
+                    return CommandResult.SuccessCommand(new ParsedCommand(CommandType.AzureWhoAmI, new List<string>()));
+                }
+                return CommandResult.Failure("Invalid arguments for :azurewhoami. Expected: :azurewhoami");
+
+            case "stats":
+                if (arguments.Count == 0)
+                {
+                    return CommandResult.SuccessCommand(new ParsedCommand(CommandType.Stats, arguments));
+                }
+                return CommandResult.Failure("Invalid arguments for :stats. Expected: :stats");
+
 
             case "setusetls":
                 if (arguments.Count == 1)

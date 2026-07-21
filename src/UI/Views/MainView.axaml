@@ -38,6 +38,12 @@
         <!--  DataGrid headers blend into the surrounding card background  -->
         <Style Selector="DataGridColumnHeader">
             <Setter Property="Background" Value="Transparent" />
+            <Setter Property="SeparatorBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+        </Style>
+        <!--  Header bottom border (separator between column headers and rows)  -->
+        <Style Selector="DataGrid /template/ Rectangle#PART_ColumnHeadersAndRowsSeparator">
+            <Setter Property="Fill" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
         </Style>
     </UserControl.Styles>
 
@@ -154,7 +160,7 @@
                         Label="Export All"
                         ToolTip.Tip="Export all messages from selected topic (max 100)">
                         <controls:FACommandBarButton.IconSource>
-                            <controls:FAPathIconSource Data="{StaticResource export_regular}" />
+                            <controls:FAFontIconSource FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE72D;" />
                         </controls:FACommandBarButton.IconSource>
                     </controls:FACommandBarButton>
                     <controls:FACommandBarButton
@@ -503,10 +509,10 @@
                                                 CommandParameter="{Binding}"
                                                 DockPanel.Dock="Right"
                                                 ToolTip.Tip="Export this message">
-                                                <PathIcon
-                                                    Width="12"
-                                                    Height="12"
-                                                    Data="{StaticResource export_regular}" />
+                                                <controls:FAFontIcon
+                                                    FontFamily="{StaticResource SymbolThemeFontFamily}"
+                                                    FontSize="12"
+                                                    Glyph="&#xE72D;" />
                                             </Button>
 
                                             <!--  DisplayText (Fills remaining space)  -->

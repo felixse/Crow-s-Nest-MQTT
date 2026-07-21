@@ -107,7 +107,7 @@
             <controls:FAFontIcon
                 Grid.Column="1"
                 Margin="4,0,0,0"
-                VerticalAlignment="Baseline"
+                VerticalAlignment="Center"
                 FontFamily="{DynamicResource SymbolThemeFontFamily}"
                 FontSize="20"
                 Glyph="&#xE946;"

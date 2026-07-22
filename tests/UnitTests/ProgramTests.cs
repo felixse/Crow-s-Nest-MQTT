@@ -370,6 +370,30 @@ namespace CrowsNestMqtt.UnitTests
         }
 
         [Fact]
+        public void EnvironmentSettingsOverrides_ParsesWebSocketProxySettings()
+        {
+            try
+            {
+                Environment.SetEnvironmentVariable("CROWSNEST__WEBSOCKET_PROXY_ADDRESS", "http://proxy.local:3128");
+                Environment.SetEnvironmentVariable("CROWSNEST__WEBSOCKET_PROXY_USERNAME", "proxy-user");
+                Environment.SetEnvironmentVariable("CROWSNEST__WEBSOCKET_PROXY_PASSWORD", "proxy-pass");
+
+                var result = EnvironmentSettingsOverrides.Load();
+
+                Assert.True(result.HasOverrides);
+                Assert.Equal("http://proxy.local:3128", result.WebSocketProxyAddress);
+                Assert.Equal("proxy-user", result.WebSocketProxyUsername);
+                Assert.Equal("proxy-pass", result.WebSocketProxyPassword);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("CROWSNEST__WEBSOCKET_PROXY_ADDRESS", null);
+                Environment.SetEnvironmentVariable("CROWSNEST__WEBSOCKET_PROXY_USERNAME", null);
+                Environment.SetEnvironmentVariable("CROWSNEST__WEBSOCKET_PROXY_PASSWORD", null);
+            }
+        }
+
+        [Fact]
         public void EnvironmentSettingsOverrides_DetectsWsEndpointName()
         {
             // Aspire sets services__mqtt__ws__0 when referencing a "ws" named endpoint

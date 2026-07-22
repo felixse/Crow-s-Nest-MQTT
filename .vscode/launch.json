@@ -9,12 +9,14 @@
             "name": "C#: Crow'S NestMQTT Debug",
             "type": "dotnet",
             "request": "launch",
-            "projectPath": "${workspaceFolder}/src/MainApp/CrowsNestMqtt.App.csproj"
+            "projectPath": "${workspaceFolder}/src/MainApp/CrowsNestMqtt.App.csproj",
+            "preLaunchTask": "build"
         },
         {
             "name": "C#: Aspire AppHost (http)",
             "type": "coreclr",
             "request": "launch",
+            "preLaunchTask": "build",
             "program": "dotnet",
             "cwd": "${workspaceFolder}",
             "args": [

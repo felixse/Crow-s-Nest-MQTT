@@ -1094,7 +1094,10 @@ public class MainViewModel : ReactiveObject, IDisposable, IStatusBarService // I
             SubscriptionQoS = Settings.SubscriptionQoS,
             SubscriptionTopic = Settings.SubscriptionTopic,
             Transport = Settings.SelectedTransport,
-            WebSocketPath = Settings.WebSocketPath
+            WebSocketPath = Settings.WebSocketPath,
+            WebSocketProxyAddress = Settings.WebSocketProxyAddress,
+            WebSocketProxyUsername = Settings.WebSocketProxyUsername,
+            WebSocketProxyPassword = Settings.WebSocketProxyPassword
         });
 
         _mqttService.ConnectionStateChanged += OnConnectionStateChanged;
@@ -2601,7 +2604,10 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
             SubscriptionQoS = Settings.SubscriptionQoS,
             SubscriptionTopic = Settings.SubscriptionTopic,
             Transport = Settings.SelectedTransport,
-            WebSocketPath = Settings.WebSocketPath
+            WebSocketPath = Settings.WebSocketPath,
+            WebSocketProxyAddress = Settings.WebSocketProxyAddress,
+            WebSocketProxyUsername = Settings.WebSocketProxyUsername,
+            WebSocketProxyPassword = Settings.WebSocketProxyPassword
         };
         
         _mqttService.UpdateSettings(connectionSettings);
@@ -3475,6 +3481,29 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
                         Log.Warning("Invalid arguments for SetUseTls command.");
                     }
                     break;
+                case CommandType.SetWebSocketProxy:
+                    if (command.Arguments.Count == 0)
+                    {
+                        this.Settings.WebSocketProxyAddress = null;
+                        this.Settings.WebSocketProxyUsername = null;
+                        this.Settings.WebSocketProxyPassword = null;
+                        StatusBarText = "WebSocket proxy cleared. Reconnect for the change to take effect.";
+                        Log.Information("WebSocket proxy cleared via command.");
+                    }
+                    else
+                    {
+                        this.Settings.WebSocketProxyAddress = command.Arguments[0];
+                        this.Settings.WebSocketProxyUsername = command.Arguments.Count >= 2
+                            ? command.Arguments[1]
+                            : null;
+                        this.Settings.WebSocketProxyPassword = command.Arguments.Count >= 3
+                            ? command.Arguments[2]
+                            : null;
+                        StatusBarText =
+                            $"WebSocket proxy set to '{command.Arguments[0]}'. Reconnect for the change to take effect.";
+                        Log.Information("WebSocket proxy configured via command: {Address}", command.Arguments[0]);
+                    }
+                    break;
                 case CommandType.Publish:
                     HandlePublishCommand(command);
                     break;
@@ -3520,6 +3549,7 @@ private void ProcessMessageBatchOnUIThread(List<IdentifiedMqttApplicationMessage
         { "setsubscription", (":setsubscription [<topic-filter>]", "Sets the MQTT topic filter used for the initial subscription. Defaults to '#' (all topics); Azure Event Grid requires a filter matching your Topic Space template (e.g. 'sensors/#'). Reconnect after changing.") },
         { "azurewhoami", (":azurewhoami", "Prints the identity (upn, oid, name, appid) that DefaultAzureCredential would use for Azure Event Grid token acquisition. Useful for choosing the correct Event Grid Client authenticationName.") },
         { "setusetls", (":setusetls <true|false>", "Sets whether to use TLS for MQTT connections. true = enable TLS, false = disable TLS.") },
+        { "setproxy", (":setproxy [<http[s]://host:port> [<username> [<password>]]]", "Configures the forward proxy used only for WebSocket transport. Omit arguments to clear it; reconnect after changing.") },
         { "deletetopic", (":deletetopic [topic-pattern] [--confirm]", "Deletes retained messages from a topic and its subtopics by publishing empty retained messages. Uses selected topic if no pattern specified.") },
         { "gotoresponse", (":gotoresponse", "Navigates to the response message for the currently selected MQTT v5 request message.") },
         { "settings", (":settings", "Toggles the visibility of the settings pane.") },

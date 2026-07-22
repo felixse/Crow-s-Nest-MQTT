@@ -57,6 +57,8 @@ public enum CommandType
     SetAuthScope,
     /// <summary> Set the MQTT TLS usage flag. </summary>
     SetUseTls,
+    /// <summary> Configure or clear the HTTP proxy used for WebSocket transport. </summary>
+    SetWebSocketProxy,
     /// <summary> Delete retained messages from a topic and its subtopics. </summary>
     DeleteTopic,
     /// <summary> Navigate to the response message for the currently selected request message. </summary>

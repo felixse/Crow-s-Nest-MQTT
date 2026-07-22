@@ -12,7 +12,9 @@
                 // Ask dotnet build to generate full paths for file names.
                 "/property:GenerateFullPaths=true",
                 // Do not generate summary otherwise it leads to duplicate errors in Problems panel
-                "/consoleloggerparameters:NoSummary"
+                "/consoleloggerparameters:NoSummary",
+                // Avoid stale 0-byte DLLs from interrupted post-compile weavers (e.g. Fody)
+                "--no-incremental"
             ],
             "group": {
                 "kind": "build",

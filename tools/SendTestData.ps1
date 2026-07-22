@@ -67,6 +67,8 @@ if ($null -ne $UseTls) {
 
 $clientId = "pwsh-mqtt-$(Get-Random)"
 $publishTimeout = [TimeSpan]::FromSeconds(30)
+$connectRetryCount = 12
+$connectRetryDelay = [TimeSpan]::FromSeconds(5)
 
 # Build MQTT client options (MQTTnet 5.x API)
 $optionsBuilder = [MQTTnet.MqttClientOptionsBuilder]::new()
@@ -80,10 +82,27 @@ $client = $factory.CreateMqttClient()
 
 $failedPublishes = [System.Collections.Generic.List[string]]::new()
 
+function Connect-MqttClientWithRetry {
+    for ($attempt = 1; $attempt -le $connectRetryCount; $attempt++) {
+        try {
+            $null = $client.ConnectAsync($options).WaitAsync($publishTimeout).GetAwaiter().GetResult()
+            return
+        } catch {
+            $message = $_.Exception.InnerException.Message ?? $_.Exception.Message
+            if ($attempt -eq $connectRetryCount) {
+                throw "Unable to connect to $mqttHost`:$port after $connectRetryCount attempts. Last error: $message"
+            }
+
+            Write-Warning "MQTT connection attempt $attempt/$connectRetryCount failed: $message. Retrying in $($connectRetryDelay.TotalSeconds) seconds..."
+            Start-Sleep -Seconds $connectRetryDelay.TotalSeconds
+        }
+    }
+}
+
 function Ensure-MqttConnected {
     if (-not $client.IsConnected) {
         Write-Host "Reconnecting to $mqttHost : $port ..."
-        $null = $client.ConnectAsync($options).WaitAsync($publishTimeout).GetAwaiter().GetResult()
+        Connect-MqttClientWithRetry
     }
 }
 
@@ -106,7 +125,7 @@ function Send-MqttMessage {
 
 # Connect
 Write-Host "Connecting to $mqttHost : $port with client id $clientId (TLS: $useTls)"
-$null = $client.ConnectAsync($options).WaitAsync($publishTimeout).GetAwaiter().GetResult()
+Connect-MqttClientWithRetry
 
 # Read image as bytes
 $imageBytes = [System.IO.File]::ReadAllBytes($ImagePath)

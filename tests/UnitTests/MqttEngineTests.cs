@@ -390,6 +390,51 @@ public class MqttEngineTests
     }
 
     [Fact]
+    public void BuildMqttOptions_WithWebSocketProxy_ShouldConfigureProxyAddressAndCredentials()
+    {
+        var settings = new MqttConnectionSettings
+        {
+            Hostname = "broker.example.com",
+            Port = 8083,
+            Transport = TransportProtocol.WebSocket,
+            WebSocketPath = "/mqtt",
+            WebSocketProxyAddress = "http://proxy.example.com:3128",
+            WebSocketProxyUsername = "proxy-user",
+            WebSocketProxyPassword = "proxy-pass"
+        };
+        using var engine = new MqttEngine(settings);
+
+        var methodInfo = typeof(MqttEngine).GetMethod("BuildMqttOptions", BindingFlags.NonPublic | BindingFlags.Instance);
+        var options = methodInfo?.Invoke(engine, null) as MqttClientOptions;
+
+        Assert.NotNull(options);
+        var wsOptions = Assert.IsType<MqttClientWebSocketOptions>(options.ChannelOptions);
+        Assert.NotNull(wsOptions.ProxyOptions);
+        Assert.Equal("http://proxy.example.com:3128", wsOptions.ProxyOptions.Address);
+        Assert.Equal("proxy-user", wsOptions.ProxyOptions.Username);
+        Assert.Equal("proxy-pass", wsOptions.ProxyOptions.Password);
+    }
+
+    [Fact]
+    public void BuildMqttOptions_WithTcpTransport_ShouldIgnoreWebSocketProxy()
+    {
+        var settings = new MqttConnectionSettings
+        {
+            Hostname = "broker.local",
+            Port = 1883,
+            Transport = TransportProtocol.Tcp,
+            WebSocketProxyAddress = "http://proxy.example.com:3128"
+        };
+        using var engine = new MqttEngine(settings);
+
+        var methodInfo = typeof(MqttEngine).GetMethod("BuildMqttOptions", BindingFlags.NonPublic | BindingFlags.Instance);
+        var options = methodInfo?.Invoke(engine, null) as MqttClientOptions;
+
+        Assert.NotNull(options);
+        Assert.IsType<MqttClientTcpOptions>(options.ChannelOptions);
+    }
+
+    [Fact]
     public void BuildMqttOptions_WithTcpTransport_ShouldUseTcpChannel()
     {
         // Arrange

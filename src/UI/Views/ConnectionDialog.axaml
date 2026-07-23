@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:FluentAvalonia.UI.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:behaviors="using:CrowsNestMqtt.UI.Behaviors"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:CrowsNestMqtt.UI.ViewModels"
     x:CompileBindings="False"
@@ -36,13 +37,12 @@
             Grid.Row="1"
             Grid.Column="0"
             Text="Port:" />
-        <NumericUpDown
+        <TextBox
             Grid.Row="1"
             Grid.Column="1"
-            Maximum="65535"
-            Minimum="1"
-            ParsingNumberStyle="Integer"
-            Value="{Binding Port, Mode=TwoWay, StringFormat=N0}" />
+            MaxLength="5"
+            behaviors:DigitOnlyInput.Enable="True"
+            Text="{Binding Port, Mode=TwoWay}" />
 
         <!--  Use TLS  -->
         <TextBlock
@@ -70,13 +70,12 @@
             Grid.Row="4"
             Grid.Column="0"
             Text="Keep Alive (s):" />
-        <NumericUpDown
+        <TextBox
             Grid.Row="4"
             Grid.Column="1"
             MinWidth="80"
-            Minimum="0"
-            ParsingNumberStyle="Integer"
-            Value="{Binding KeepAliveIntervalSeconds, Mode=TwoWay, StringFormat=N0}" />
+            behaviors:DigitOnlyInput.Enable="True"
+            Text="{Binding KeepAliveIntervalSeconds, Mode=TwoWay}" />
 
         <!--  Clean Session  -->
         <TextBlock
@@ -98,12 +97,12 @@
             Grid.Column="1"
             VerticalAlignment="Center"
             ColumnDefinitions="*,Auto">
-            <NumericUpDown
+            <TextBox
                 Grid.Column="0"
-                FormatString="N0"
-                Minimum="0"
+                behaviors:DigitOnlyInput.Enable="True"
+                behaviors:DigitOnlyInput.AllowEmpty="True"
                 PlaceholderText="(infinite)"
-                Value="{Binding SessionExpiryIntervalSeconds, Mode=TwoWay}" />
+                Text="{Binding SessionExpiryIntervalSeconds, Mode=TwoWay}" />
             <controls:FAFontIcon
                 Grid.Column="1"
                 Margin="4,0,0,0"

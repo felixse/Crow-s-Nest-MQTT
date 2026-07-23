@@ -3,6 +3,7 @@
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:behaviors="using:CrowsNestMqtt.UI.Behaviors"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:ui="using:FluentAvalonia.UI.Controls"
     xmlns:vm="using:CrowsNestMqtt.UI.ViewModels"
@@ -84,13 +85,12 @@
                                     MinWidth="160"
                                     PlaceholderText="Topic Filter (e.g., # or /some/topic)"
                                     Text="{Binding TopicFilter, Mode=TwoWay}" />
-                                <NumericUpDown
+                                <TextBox
                                     Grid.Column="1"
                                     MinWidth="100"
-                                    Minimum="0"
-                                    ParsingNumberStyle="Integer"
                                     PlaceholderText="Bytes"
-                                    Value="{Binding MaxSizeBytes, Mode=TwoWay, StringFormat=N0}" />
+                                    behaviors:DigitOnlyInput.Enable="True"
+                                    Text="{Binding MaxSizeBytes, Mode=TwoWay}" />
                                 <Button
                                     Grid.Column="2"
                                     Background="Transparent"

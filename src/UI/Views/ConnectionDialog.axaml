@@ -9,7 +9,7 @@
     x:CompileBindings="False"
     x:DataType="vm:SettingsViewModel"
     mc:Ignorable="d">
-    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
         <Grid.Styles>
             <Style Selector="TextBlock">
                 <Setter Property="VerticalAlignment" Value="Center" />
@@ -114,13 +114,76 @@
                 ToolTip.Tip="(0 = expires immediately, empty = infinite)" />
         </Grid>
 
-        <!--  Authentication Mode  -->
+        <!--  Transport Protocol  -->
         <TextBlock
             Grid.Row="7"
             Grid.Column="0"
-            Text="Auth Mode:" />
+            Text="Transport:" />
         <ComboBox
             Grid.Row="7"
+            Grid.Column="1"
+            MinWidth="220"
+            ItemsSource="{Binding AvailableTransports}"
+            SelectedItem="{Binding SelectedTransport, Mode=TwoWay}" />
+
+        <!--  WebSocket Path (Conditionally Visible)  -->
+        <TextBlock
+            Grid.Row="8"
+            Grid.Column="0"
+            IsVisible="{Binding IsWebSocketSelected}"
+            Text="WS Path:" />
+        <TextBox
+            Grid.Row="8"
+            Grid.Column="1"
+            IsVisible="{Binding IsWebSocketSelected}"
+            PlaceholderText="/mqtt"
+            Text="{Binding WebSocketPath, Mode=TwoWay}" />
+
+        <!--  WebSocket Proxy (Conditionally Visible)  -->
+        <TextBlock
+            Grid.Row="9"
+            Grid.Column="0"
+            IsVisible="{Binding IsWebSocketSelected}"
+            Text="WS Proxy:" />
+        <TextBox
+            Grid.Row="9"
+            Grid.Column="1"
+            IsVisible="{Binding IsWebSocketSelected}"
+            PlaceholderText="http://proxy:3128"
+            Text="{Binding WebSocketProxyAddress, Mode=TwoWay}" />
+
+        <TextBlock
+            Grid.Row="10"
+            Grid.Column="0"
+            IsVisible="{Binding IsWebSocketSelected}"
+            Text="Proxy User:" />
+        <TextBox
+            Grid.Row="10"
+            Grid.Column="1"
+            IsVisible="{Binding IsWebSocketSelected}"
+            PlaceholderText="(optional)"
+            Text="{Binding WebSocketProxyUsername, Mode=TwoWay}" />
+
+        <TextBlock
+            Grid.Row="11"
+            Grid.Column="0"
+            IsVisible="{Binding IsWebSocketSelected}"
+            Text="Proxy Password:" />
+        <TextBox
+            Grid.Row="11"
+            Grid.Column="1"
+            IsVisible="{Binding IsWebSocketSelected}"
+            PasswordChar="*"
+            PlaceholderText="(optional)"
+            Text="{Binding WebSocketProxyPassword, Mode=TwoWay}" />
+
+        <!--  Authentication Mode  -->
+        <TextBlock
+            Grid.Row="12"
+            Grid.Column="0"
+            Text="Auth Mode:" />
+        <ComboBox
+            Grid.Row="12"
             Grid.Column="1"
             MinWidth="220"
             ItemsSource="{Binding AvailableAuthenticationModes}"
@@ -128,12 +191,12 @@
 
         <!--  Auth Username (Conditionally Visible)  -->
         <TextBlock
-            Grid.Row="8"
+            Grid.Row="13"
             Grid.Column="0"
             IsVisible="{Binding IsUsernamePasswordSelected}"
             Text="Username:" />
         <TextBox
-            Grid.Row="8"
+            Grid.Row="13"
             Grid.Column="1"
             IsVisible="{Binding IsUsernamePasswordSelected}"
             PlaceholderText="Enter username"
@@ -141,12 +204,12 @@
 
         <!--  Auth Password (Conditionally Visible)  -->
         <TextBlock
-            Grid.Row="9"
+            Grid.Row="14"
             Grid.Column="0"
             IsVisible="{Binding IsUsernamePasswordSelected}"
             Text="Password:" />
         <TextBox
-            Grid.Row="9"
+            Grid.Row="14"
             Grid.Column="1"
             IsVisible="{Binding IsUsernamePasswordSelected}"
             PasswordChar="*"
@@ -155,7 +218,7 @@
 
         <!--  Enhanced Authentication Header  -->
         <TextBlock
-            Grid.Row="10"
+            Grid.Row="15"
             Grid.Column="0"
             Grid.ColumnSpan="2"
             Margin="0,16,0,8"
@@ -166,12 +229,12 @@
 
         <!--  Authentication Method  -->
         <TextBlock
-            Grid.Row="11"
+            Grid.Row="16"
             Grid.Column="0"
             IsVisible="{Binding IsEnhancedAuthSelected}"
             Text="Auth Method:" />
         <TextBox
-            Grid.Row="11"
+            Grid.Row="16"
             Grid.Column="1"
             IsVisible="{Binding IsEnhancedAuthSelected}"
             PlaceholderText="e.g., 'K8S-SAT'"
@@ -179,13 +242,13 @@
 
         <!--  Authentication Data  -->
         <TextBlock
-            Grid.Row="12"
+            Grid.Row="17"
             Grid.Column="0"
             IsVisible="{Binding IsEnhancedAuthSelected}"
             Text="Auth Data:" />
 
         <ScrollViewer
-            Grid.Row="12"
+            Grid.Row="17"
             Grid.Column="1"
             MaxWidth="420"
             MaxHeight="200"
@@ -202,34 +265,9 @@
                 TextWrapping="NoWrap" />
         </ScrollViewer>
 
-        <!--  Transport Protocol  -->
-        <TextBlock
-            Grid.Row="13"
-            Grid.Column="0"
-            Text="Transport:" />
-        <ComboBox
-            Grid.Row="13"
-            Grid.Column="1"
-            MinWidth="220"
-            ItemsSource="{Binding AvailableTransports}"
-            SelectedItem="{Binding SelectedTransport, Mode=TwoWay}" />
-
-        <!--  WebSocket Path (Conditionally Visible)  -->
-        <TextBlock
-            Grid.Row="14"
-            Grid.Column="0"
-            IsVisible="{Binding IsWebSocketSelected}"
-            Text="WS Path:" />
-        <TextBox
-            Grid.Row="14"
-            Grid.Column="1"
-            IsVisible="{Binding IsWebSocketSelected}"
-            PlaceholderText="/mqtt"
-            Text="{Binding WebSocketPath, Mode=TwoWay}" />
-
         <!--  Azure Authentication Header  -->
         <TextBlock
-            Grid.Row="15"
+            Grid.Row="18"
             Grid.Column="0"
             Grid.ColumnSpan="2"
             Margin="0,16,0,8"
@@ -240,12 +278,12 @@
 
         <!--  Azure OAuth Scope  -->
         <TextBlock
-            Grid.Row="16"
+            Grid.Row="19"
             Grid.Column="0"
             IsVisible="{Binding IsAzureAuthSelected}"
             Text="OAuth Scope:" />
         <StackPanel
-            Grid.Row="16"
+            Grid.Row="19"
             Grid.Column="1"
             IsVisible="{Binding IsAzureAuthSelected}"
             Orientation="Vertical"

@@ -34,6 +34,12 @@ public class MqttConnectionSettings
     /// </summary>
     public string? WebSocketPath { get; set; }
     /// <summary>
+    /// HTTP or HTTPS forward proxy used for WebSocket connections.
+    /// </summary>
+    public string? WebSocketProxyAddress { get; set; }
+    public string? WebSocketProxyUsername { get; set; }
+    public string? WebSocketProxyPassword { get; set; }
+    /// <summary>
     /// QoS level for the wildcard subscription. Default is 1 (AtLeastOnce).
     /// Set to 2 (ExactlyOnce) if you need to receive QoS 2 messages without downgrade.
     /// Higher QoS reduces maximum message throughput.

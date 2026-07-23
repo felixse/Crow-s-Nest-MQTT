@@ -363,6 +363,36 @@ public class DispatchCommandTests : IDisposable
     }
 
     [Fact]
+    public void DispatchCommand_SetWebSocketProxy_WithCredentials_ShouldSetProxy()
+    {
+        Dispatch(
+            CommandType.SetWebSocketProxy,
+            "http://proxy.local:3128",
+            "proxy-user",
+            "proxy-pass");
+
+        Assert.Equal("http://proxy.local:3128", _viewModel.Settings.WebSocketProxyAddress);
+        Assert.Equal("proxy-user", _viewModel.Settings.WebSocketProxyUsername);
+        Assert.Equal("proxy-pass", _viewModel.Settings.WebSocketProxyPassword);
+        Assert.Contains("proxy.local:3128", _viewModel.StatusBarText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DispatchCommand_SetWebSocketProxy_NoArgs_ShouldClearProxy()
+    {
+        _viewModel.Settings.WebSocketProxyAddress = "http://proxy.local:3128";
+        _viewModel.Settings.WebSocketProxyUsername = "proxy-user";
+        _viewModel.Settings.WebSocketProxyPassword = "proxy-pass";
+
+        Dispatch(CommandType.SetWebSocketProxy);
+
+        Assert.Null(_viewModel.Settings.WebSocketProxyAddress);
+        Assert.Null(_viewModel.Settings.WebSocketProxyUsername);
+        Assert.Null(_viewModel.Settings.WebSocketProxyPassword);
+        Assert.Contains("cleared", _viewModel.StatusBarText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void DispatchCommand_Settings_ShouldToggleSettings()
     {
         bool initial = _viewModel.IsSettingsVisible;

@@ -192,6 +192,61 @@ public class SettingsViewModelTests
         Assert.True(vm.IsWebSocketSelected);
     }
 
+    [Fact]
+    public void Into_SettingsData_HasWebSocketProxyConfiguration()
+    {
+        var vm = new SettingsViewModel
+        {
+            WebSocketProxyAddress = "http://proxy.local:3128",
+            WebSocketProxyUsername = "proxy-user",
+            WebSocketProxyPassword = "proxy-pass"
+        };
+
+        var settingsData = vm.Into();
+
+        Assert.Equal("http://proxy.local:3128", settingsData.WebSocketProxyAddress);
+        Assert.Equal("proxy-user", settingsData.WebSocketProxyUsername);
+        Assert.Equal("proxy-pass", settingsData.WebSocketProxyPassword);
+    }
+
+    [Fact]
+    public void From_SettingsData_SetsWebSocketProxyConfiguration()
+    {
+        var settingsData = new SettingsData(
+            "host",
+            8083,
+            Transport: TransportProtocol.WebSocket,
+            WebSocketProxyAddress: "http://proxy.local:3128",
+            WebSocketProxyUsername: "proxy-user",
+            WebSocketProxyPassword: "proxy-pass");
+        var vm = new SettingsViewModel();
+
+        vm.From(settingsData);
+
+        Assert.Equal("http://proxy.local:3128", vm.WebSocketProxyAddress);
+        Assert.Equal("proxy-user", vm.WebSocketProxyUsername);
+        Assert.Equal("proxy-pass", vm.WebSocketProxyPassword);
+    }
+
+    [Fact]
+    public void ApplyEnvironmentOverrides_SetsWebSocketProxyConfiguration()
+    {
+        var vm = new SettingsViewModel();
+        var overrides = new EnvironmentSettingsOverrides
+        {
+            WebSocketProxyAddress = "http://proxy.local:3128",
+            WebSocketProxyUsername = "proxy-user",
+            WebSocketProxyPassword = "proxy-pass",
+            HasOverrides = true
+        };
+
+        vm.ApplyEnvironmentOverrides(overrides);
+
+        Assert.Equal("http://proxy.local:3128", vm.WebSocketProxyAddress);
+        Assert.Equal("proxy-user", vm.WebSocketProxyUsername);
+        Assert.Equal("proxy-pass", vm.WebSocketProxyPassword);
+    }
+
     // --- Azure (Event Grid OAUTH2-JWT) tests ---
 
     [Fact]

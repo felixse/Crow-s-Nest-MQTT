@@ -28,6 +28,9 @@ public record SettingsData(
     TransportProtocol Transport = TransportProtocol.Tcp,
     string? WebSocketPath = null,
     string SubscriptionTopic = "#",
+    string? WebSocketProxyAddress = null,
+    string? WebSocketProxyUsername = null,
+    string? WebSocketProxyPassword = null,
     bool ShowConnectionDialogOnLaunch = true,
     AppTheme Theme = AppTheme.System)
 {

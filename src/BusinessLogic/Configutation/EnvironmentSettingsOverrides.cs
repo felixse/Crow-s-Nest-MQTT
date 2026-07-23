@@ -34,6 +34,9 @@ public sealed record EnvironmentSettingsOverrides
     public IList<TopicBufferLimit>? TopicSpecificBufferLimits { get; init; }
     public TransportProtocol? Transport { get; init; }
     public string? WebSocketPath { get; init; }
+    public string? WebSocketProxyAddress { get; init; }
+    public string? WebSocketProxyUsername { get; init; }
+    public string? WebSocketProxyPassword { get; init; }
 
     /// <summary>
     /// Whether any environment variable overrides were detected.
@@ -92,6 +95,9 @@ public sealed record EnvironmentSettingsOverrides
         var authMode = ReadAuthMode();
         var envTransport = ReadTransport("TRANSPORT");
         var envWebSocketPath = ReadString("WEBSOCKET_PATH");
+        var webSocketProxyAddress = ReadString("WEBSOCKET_PROXY_ADDRESS");
+        var webSocketProxyUsername = ReadString("WEBSOCKET_PROXY_USERNAME");
+        var webSocketProxyPassword = ReadString("WEBSOCKET_PROXY_PASSWORD");
 
         // Explicit CROWSNEST__ hostname/port override Aspire-derived values
         if (envHostname != null) hostname = envHostname;
@@ -111,7 +117,9 @@ public sealed record EnvironmentSettingsOverrides
             || maxTopicLimit.HasValue || parallelismDegree.HasValue
             || timeoutSeconds.HasValue || defaultBufferSize.HasValue
             || topicLimits != null || authMode != null
-            || transport.HasValue || webSocketPath != null;
+            || transport.HasValue || webSocketPath != null
+            || webSocketProxyAddress != null || webSocketProxyUsername != null
+            || webSocketProxyPassword != null;
 
         if (hasAny)
         {
@@ -138,6 +146,9 @@ public sealed record EnvironmentSettingsOverrides
             TopicSpecificBufferLimits = topicLimits,
             Transport = transport,
             WebSocketPath = webSocketPath,
+            WebSocketProxyAddress = webSocketProxyAddress,
+            WebSocketProxyUsername = webSocketProxyUsername,
+            WebSocketProxyPassword = webSocketProxyPassword,
             HasOverrides = hasAny,
             IsAspireEnvironment = isAspire
         };

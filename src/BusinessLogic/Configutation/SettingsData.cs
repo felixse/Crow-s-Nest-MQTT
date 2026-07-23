@@ -20,7 +20,10 @@ public record SettingsData(
     int SubscriptionQoS = 1,
     TransportProtocol Transport = TransportProtocol.Tcp,
     string? WebSocketPath = null,
-    string SubscriptionTopic = "#")
+    string SubscriptionTopic = "#",
+    string? WebSocketProxyAddress = null,
+    string? WebSocketProxyUsername = null,
+    string? WebSocketProxyPassword = null)
 {
     public IList<TopicBufferLimit> TopicSpecificBufferLimits { get; init; } = new List<TopicBufferLimit>();
     /// <summary>

@@ -61,7 +61,7 @@ xattr -dr com.apple.quarantine /Applications/CrowsNestMQTT.app
     * Strikethrough and dimmed text in message history for expired messages
     * Yellow warning icon in metadata view for the expiry field
 * Supports TLS connection to MQTT Broker 🔐
-* Supports WebSocket transport (ws:// and wss://) 🌐
+* Supports WebSocket transport (ws:// and wss://), including HTTP(S) forward proxies 🌐
 * Can handle huge amount of MQTT messages 
 * Allows filtering of MQTT topics by pattern 🗃️
 * Allows searching of pattern within MQTT message payloads 🔍
@@ -107,6 +107,8 @@ Configure how the client connects to your MQTT broker:
 - **Hostname**: The broker address (default: `localhost`).
 - **Port**: The broker port (default: `1883`).
 - **Use TLS**: Enable to connect to the broker using TLS encryption. If enabled, the client will allow untrusted certificates and ignore certificate chain and revocation errors. You can also set this via the `:setusetls <true|false>` command.
+- **Transport / WS Path**: Select WebSocket transport and configure its broker path (default: `/mqtt`).
+- **WS Proxy / Proxy User / Proxy Password**: Optional HTTP(S) forward proxy settings used only for WebSocket transport.
 - **Client ID**: Optional identifier for the client. If left blank, one is generated.
 - **Keep Alive Interval**: Time in seconds between keep-alive pings (default: `60`).
 - **Clean Session**: If enabled, the broker does not retain session data after disconnect.
@@ -210,6 +212,7 @@ Crow's Nest MQTT provides a command interface (likely accessible via a dedicated
 *   `:setsubscription [<topic-filter>]` - Set the MQTT topic filter for the client's initial subscription. Defaults to `#`. Azure Event Grid rejects `#`; use a filter that matches your Topic Space template (e.g. `sensors/#`). Omit the argument to reset to `#`.
 *   `:azurewhoami` - Print the identity (`upn`, `oid`, `name`, `appid`, `tenant`) that `DefaultAzureCredential` will use for Azure Event Grid. Use the values it prints to configure the `authenticationName` on the Event Grid Client resource.
 *   `:setusetls <true|false>` - Set whether to use TLS for the MQTT connection. When set to `true`, the client will connect using TLS, allow untrusted certificates, and ignore certificate errors.
+*   `:setproxy [<http[s]://host:port> [<username> [<password>]]]` - Configure the forward proxy used for WebSocket transport. Omit all arguments to clear it, and reconnect after changing it. A dedicated command is used instead of extending `:connect` because proxy configuration is transport-level state that should persist across broker reconnects and remain separate from MQTT broker credentials.
 *   `:publish [topic] [@file|text]` - Open the publish window. Optionally pre-fill the topic (defaults to the selected topic) and payload from a file (`@path/to/file`) or inline text. The publish window is non-modal and supports all MQTT V5 properties.
 *   `:stats` - Open a non-modal window showing per-topic statistics (message count, total payload size, average payload size, mean time between messages) for every topic that has received a message. The counters are lifetime totals — they are not affected by ring-buffer eviction and only reset on `:clear`. The table is sortable, updates once per second, and can be copied as a GitHub-flavored Markdown table via the *Copy as Markdown* button (or `Ctrl+C`).
 *   `[search_term]` - Any text entered without a `:` prefix is treated as a search term to filter messages.
@@ -424,6 +427,13 @@ When an Aspire endpoint environment variable is detected, the application:
 3. Automatically connects to the broker on startup
 4. Persists the overridden values to `settings.json` so other tools can use them
 
+The repository AppHost also starts an `ubuntu/squid` forward proxy and a
+`crows-nest-mqtt-ws-proxy` application instance. That instance connects to the
+EMQX WebSocket listener through Squid, so proxy behavior can be exercised from
+the Aspire dashboard without additional setup. The AppHost mounts
+`src/AppHost/squid/crowsnest.conf`, which permits HTTP CONNECT tunneling to the
+EMQX WebSocket listener on port `8083`.
+
 ```csharp
   // ...
   var mqttViewerWorkingDirectory = @"S:\upertools\CrowsNestMqtt";
@@ -464,6 +474,9 @@ This is useful for:
 | `CROWSNEST__USE_TLS` | Enable TLS encryption | bool | `true` |
 | `CROWSNEST__TRANSPORT` | Transport protocol | enum | `Tcp`, `WebSocket` |
 | `CROWSNEST__WEBSOCKET_PATH` | WebSocket path (when TRANSPORT=WebSocket) | string | `/mqtt` |
+| `CROWSNEST__WEBSOCKET_PROXY_ADDRESS` | HTTP(S) forward proxy used for WebSocket transport | URI | `http://proxy.example.com:3128` |
+| `CROWSNEST__WEBSOCKET_PROXY_USERNAME` | Optional proxy username | string | `proxy-user` |
+| `CROWSNEST__WEBSOCKET_PROXY_PASSWORD` | Optional proxy password | string | `proxy-password` |
 | `CROWSNEST__SUBSCRIPTION_QOS` | Subscription QoS level (0, 1, or 2) | int | `1` |
 | `CROWSNEST__EXPORT_FORMAT` | Default export format | enum | `json`, `txt` |
 | `CROWSNEST__EXPORT_PATH` | Default export file path | string | `/tmp/exports` |
@@ -504,6 +517,20 @@ export CROWSNEST__PORT=8084
 export CROWSNEST__TRANSPORT=WebSocket
 export CROWSNEST__USE_TLS=true
 export CROWSNEST__WEBSOCKET_PATH=/mqtt
+```
+
+### Example: WebSocket Through a Forward Proxy
+
+```bash
+export CROWSNEST__HOSTNAME=broker.example.com
+export CROWSNEST__PORT=8083
+export CROWSNEST__TRANSPORT=WebSocket
+export CROWSNEST__WEBSOCKET_PATH=/mqtt
+export CROWSNEST__WEBSOCKET_PROXY_ADDRESS=http://proxy.example.com:3128
+
+# Optional proxy authentication:
+export CROWSNEST__WEBSOCKET_PROXY_USERNAME=proxy-user
+export CROWSNEST__WEBSOCKET_PROXY_PASSWORD=proxy-password
 ```
 
 ### Example: Manual Configuration

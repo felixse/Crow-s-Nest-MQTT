@@ -422,4 +422,41 @@ public class CommandParserServiceTests
         Assert.False(result.IsSuccess);
         Assert.Contains(":setsubscription", result.ErrorMessage!, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Theory]
+    [InlineData(":setproxy http://proxy.local:3128", new[] { "http://proxy.local:3128" })]
+    [InlineData(":setproxy http://proxy.local:3128 proxy-user", new[] { "http://proxy.local:3128", "proxy-user" })]
+    [InlineData(":setproxy http://proxy.local:3128 proxy-user proxy-pass", new[] { "http://proxy.local:3128", "proxy-user", "proxy-pass" })]
+    public void ParseCommand_SetProxy_WithValidArguments_Succeeds(string input, string[] expectedArguments)
+    {
+        var result = CommandParserService.ParseCommand(input, _settings);
+
+        Assert.True(result.IsSuccess, result.ErrorMessage);
+        Assert.NotNull(result.ParsedCommand);
+        Assert.Equal(CommandType.SetWebSocketProxy, result.ParsedCommand.Type);
+        Assert.Equal(expectedArguments, result.ParsedCommand.Arguments);
+    }
+
+    [Fact]
+    public void ParseCommand_SetProxy_NoArguments_ClearsProxy()
+    {
+        var result = CommandParserService.ParseCommand(":setproxy", _settings);
+
+        Assert.True(result.IsSuccess, result.ErrorMessage);
+        Assert.NotNull(result.ParsedCommand);
+        Assert.Equal(CommandType.SetWebSocketProxy, result.ParsedCommand.Type);
+        Assert.Empty(result.ParsedCommand.Arguments);
+    }
+
+    [Theory]
+    [InlineData(":setproxy proxy.local:3128")]
+    [InlineData(":setproxy ftp://proxy.local:21")]
+    [InlineData(":setproxy http://proxy.local:3128 user pass extra")]
+    public void ParseCommand_SetProxy_WithInvalidArguments_Fails(string input)
+    {
+        var result = CommandParserService.ParseCommand(input, _settings);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains(":setproxy", result.ErrorMessage!, StringComparison.OrdinalIgnoreCase);
+    }
 }

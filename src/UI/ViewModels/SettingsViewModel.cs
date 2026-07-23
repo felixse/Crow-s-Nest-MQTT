@@ -113,6 +113,27 @@ public class SettingsViewModel : ReactiveObject
         set => this.RaiseAndSetIfChanged(ref _webSocketPath, value);
     }
 
+    private string? _webSocketProxyAddress;
+    public string? WebSocketProxyAddress
+    {
+        get => _webSocketProxyAddress;
+        set => this.RaiseAndSetIfChanged(ref _webSocketProxyAddress, value);
+    }
+
+    private string? _webSocketProxyUsername;
+    public string? WebSocketProxyUsername
+    {
+        get => _webSocketProxyUsername;
+        set => this.RaiseAndSetIfChanged(ref _webSocketProxyUsername, value);
+    }
+
+    private string? _webSocketProxyPassword;
+    public string? WebSocketProxyPassword
+    {
+        get => _webSocketProxyPassword;
+        set => this.RaiseAndSetIfChanged(ref _webSocketProxyPassword, value);
+    }
+
     private int _subscriptionQoS = 1;
     /// <summary>
     /// QoS level for the wildcard subscription (0, 1, or 2). Default: 1 (AtLeastOnce).
@@ -192,9 +213,12 @@ public class SettingsViewModel : ReactiveObject
         var transportPropertiesChanged = Observable.CombineLatest(
             this.WhenAnyValue(x => x.SelectedTransport),
             this.WhenAnyValue(x => x.WebSocketPath),
+            this.WhenAnyValue(x => x.WebSocketProxyAddress),
+            this.WhenAnyValue(x => x.WebSocketProxyUsername),
+            this.WhenAnyValue(x => x.WebSocketProxyPassword),
             this.WhenAnyValue(x => x.AuthenticationScope),
             this.WhenAnyValue(x => x.SubscriptionTopic),
-            (_, _, _, _) => Unit.Default);
+            (_, _, _, _, _, _, _) => Unit.Default);
 
         // Observable for changes within the TopicSpecificLimits collection (add/remove)
         var collectionChanged = Observable.FromEventPattern<System.Collections.Specialized.NotifyCollectionChangedEventHandler, System.Collections.Specialized.NotifyCollectionChangedEventArgs>(
@@ -483,7 +507,10 @@ public class SettingsViewModel : ReactiveObject
             SubscriptionQoS: SubscriptionQoS,
             Transport: SelectedTransport,
             WebSocketPath: WebSocketPath,
-            SubscriptionTopic: SubscriptionTopic
+            SubscriptionTopic: SubscriptionTopic,
+            WebSocketProxyAddress: WebSocketProxyAddress,
+            WebSocketProxyUsername: WebSocketProxyUsername,
+            WebSocketProxyPassword: WebSocketProxyPassword
         )
         {
             TopicSpecificBufferLimits = topicLimits
@@ -513,6 +540,9 @@ public class SettingsViewModel : ReactiveObject
             SubscriptionTopic = settingsData.SubscriptionTopic;
             SelectedTransport = settingsData.Transport;
             WebSocketPath = settingsData.WebSocketPath;
+            WebSocketProxyAddress = settingsData.WebSocketProxyAddress;
+            WebSocketProxyUsername = settingsData.WebSocketProxyUsername;
+            WebSocketProxyPassword = settingsData.WebSocketProxyPassword;
             TopicSpecificLimits.Clear();
 
             // Ensure we always have the default '#' limit
@@ -606,6 +636,9 @@ public class SettingsViewModel : ReactiveObject
             if (overrides.ExportPath != null) ExportPath = overrides.ExportPath;
             if (overrides.Transport.HasValue) SelectedTransport = overrides.Transport.Value;
             if (overrides.WebSocketPath != null) WebSocketPath = overrides.WebSocketPath;
+            if (overrides.WebSocketProxyAddress != null) WebSocketProxyAddress = overrides.WebSocketProxyAddress;
+            if (overrides.WebSocketProxyUsername != null) WebSocketProxyUsername = overrides.WebSocketProxyUsername;
+            if (overrides.WebSocketProxyPassword != null) WebSocketProxyPassword = overrides.WebSocketProxyPassword;
 
             if (overrides.AuthMode != null)
             {

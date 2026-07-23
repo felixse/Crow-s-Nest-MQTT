@@ -384,6 +384,23 @@ public class CommandParserService : ICommandParserService
                 }
                 return CommandResult.Failure("Invalid arguments for :setusetls. Expected: :setusetls <true|false>");
 
+            case "setproxy":
+                if (arguments.Count == 0)
+                {
+                    return CommandResult.SuccessCommand(new ParsedCommand(CommandType.SetWebSocketProxy, arguments));
+                }
+
+                if (arguments.Count <= 3
+                    && Uri.TryCreate(arguments[0], UriKind.Absolute, out var proxyUri)
+                    && proxyUri is { Host.Length: > 0 }
+                    && proxyUri.Scheme is "http" or "https")
+                {
+                    return CommandResult.SuccessCommand(new ParsedCommand(CommandType.SetWebSocketProxy, arguments));
+                }
+
+                return CommandResult.Failure(
+                    "Invalid arguments for :setproxy. Expected: :setproxy [<http[s]://host:port> [<username> [<password>]]]. Omit arguments to clear.");
+
             case "settings":
                 if (arguments.Count == 0)
                 {

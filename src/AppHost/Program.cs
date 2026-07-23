@@ -18,12 +18,19 @@ var mqttBroker = builder.AddContainer("mqtt", "emqx/emqx", "latest")
     .WithEnvironment("EMQX_LISTENERS__TCP__DEFAULT__BIND", "0.0.0.0:1883")
     .WithEnvironment("EMQX_LISTENERS__WS__DEFAULT__BIND", "0.0.0.0:8083")
     .WithEnvironment("EMQX_LISTENERS__SSL__DEFAULT__BIND", "0.0.0.0:8883")
-    .WithEnvironment("EMQX_MQTT__MAX_PACKET_SIZE", "10MB");
+    .WithEnvironment("EMQX_MQTT__MAX_PACKET_SIZE", "10MB")
+    .WithHttpHealthCheck("/status", endpointName: "dashboard");
 
 // Get the MQTT endpoints for passing to the client applications
 var mqttEndpoint = mqttBroker.GetEndpoint("mqtt");
 var wsEndpoint = mqttBroker.GetEndpoint("ws");
 var mqttsEndpoint = mqttBroker.GetEndpoint("mqtts");
+
+// Forward proxy used to exercise WebSocket proxy configuration locally.
+var webSocketProxy = builder.AddContainer("websocket-proxy", "ubuntu/squid", "latest")
+    .WithBindMount("./squid/crowsnest.conf", "/etc/squid/conf.d/crowsnest.conf", isReadOnly: true)
+    .WithEndpoint(targetPort: 3128, name: "http", scheme: "http");
+var webSocketProxyEndpoint = webSocketProxy.GetEndpoint("http");
 
 // Shared settings for all CrowsNestMqtt instances
 var sharedEnvVars = (IResourceBuilder<ProjectResource> rb) => rb
@@ -54,6 +61,25 @@ var wsInstance = builder.AddProject<Projects.CrowsNestMqtt_App>("crows-nest-mqtt
     .WithEnvironment("CROWSNEST__TRANSPORT", "WebSocket")
     .WithEnvironment("CROWSNEST__WEBSOCKET_PATH", "/mqtt");
 sharedEnvVars(wsInstance);
+
+// Add a WebSocket instance that reaches the broker through the Squid forward proxy.
+// The broker hostname is its container resource name because Squid resolves the
+// destination inside the Aspire container network.
+var proxiedWsInstance = builder.AddProject<Projects.CrowsNestMqtt_App>("crows-nest-mqtt-ws-proxy")
+    .WithReference(wsEndpoint)
+    .WithReference(webSocketProxyEndpoint)
+    .WaitFor(mqttBroker)
+    .WaitFor(webSocketProxy)
+    .WithEnvironment("CROWSNEST__HOSTNAME", "mqtt")
+    .WithEnvironment("CROWSNEST__PORT", "8083")
+    .WithEnvironment("CROWSNEST__USE_TLS", "false")
+    .WithEnvironment("CROWSNEST__TRANSPORT", "WebSocket")
+    .WithEnvironment("CROWSNEST__WEBSOCKET_PATH", "/mqtt")
+    .WithEnvironment(
+        "CROWSNEST__WEBSOCKET_PROXY_ADDRESS",
+        ReferenceExpression.Create(
+            $"http://{webSocketProxyEndpoint.Property(EndpointProperty.Host)}:{webSocketProxyEndpoint.Property(EndpointProperty.Port)}"));
+sharedEnvVars(proxiedWsInstance);
 
 // Add a third CrowsNestMqtt instance that connects via TLS
 var tlsInstance = builder.AddProject<Projects.CrowsNestMqtt_App>("crows-nest-mqtt-tls")
@@ -164,4 +190,3 @@ static string CreateDevJwt()
 
     return handler.WriteToken(token);
 }
-

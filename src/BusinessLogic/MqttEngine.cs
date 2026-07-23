@@ -252,7 +252,34 @@ private MqttClientOptions? _currentOptions;
             var scheme = useTls ? "wss" : "ws";
             var path = string.IsNullOrWhiteSpace(_settings.WebSocketPath) ? "/mqtt" : _settings.WebSocketPath;
             var uri = $"{scheme}://{_settings.Hostname}:{_settings.Port}{path}";
-            builder.WithWebSocketServer(o => o.WithUri(uri));
+            builder.WithWebSocketServer(o =>
+            {
+                o.WithUri(uri);
+
+                if (!string.IsNullOrWhiteSpace(_settings.WebSocketProxyAddress))
+                {
+                    if (!Uri.TryCreate(_settings.WebSocketProxyAddress, UriKind.Absolute, out var proxyUri)
+                        || string.IsNullOrWhiteSpace(proxyUri.Host)
+                        || proxyUri.Scheme is not ("http" or "https"))
+                    {
+                        throw new InvalidOperationException(
+                            "WebSocket proxy address must be an absolute HTTP or HTTPS URI.");
+                    }
+
+                    o.WithProxyOptions(proxy =>
+                    {
+                        proxy.WithAddress(_settings.WebSocketProxyAddress);
+                        if (!string.IsNullOrWhiteSpace(_settings.WebSocketProxyUsername))
+                        {
+                            proxy.WithUsername(_settings.WebSocketProxyUsername);
+                        }
+                        if (_settings.WebSocketProxyPassword != null)
+                        {
+                            proxy.WithPassword(_settings.WebSocketProxyPassword);
+                        }
+                    });
+                }
+            });
         }
         else
         {
